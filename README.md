@@ -1,3 +1,3 @@
 # Vein
-A programming language for Classic FRP.
-Source codes written in this language can be transpile into Idris with Growl Framework.
+A internal DSL, embedded in some functional programming language, for Classic FRP.
+In the present project, source codes written in this language will be able to transpile into Idris with Growl Framework.
