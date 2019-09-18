@@ -1,6 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Vein.Core.SS.Audio where
 
@@ -9,7 +10,6 @@ import Vein.Core.DTCV
 import GHC.TypeNats
 import Data.Proxy
 
-data AudioSink_Proxy fs = AudioSink
-type AudioSink (fs :: Nat) = AudioSink_Proxy (Proxy fs)
+data AudioSink (fs :: Nat) = AudioSink
 
-instance Sink (AudioSink_Proxy fs) (DTCV_Proxy fs) where
+instance Sink (AudioSink fs) (DTCV fs) where

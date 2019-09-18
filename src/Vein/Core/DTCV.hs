@@ -1,9 +1,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Vein.Core.DTCV where
 
 import Vein.Core.SimpleSF
+import Vein.Core.Behavior
 import GHC.TypeNats
 import Data.Proxy
 
@@ -13,7 +16,9 @@ import Data.Proxy
 -- >>> :set -XDataKinds
 -- >>> import Data.Proxy
 -- >>> audio = DTCV :: DTCV (Proxy 44100)
-data DTCV_Proxy fs = DTCV
-type DTCV (fs :: Nat) = DTCV_Proxy (Proxy fs)
+data DTCV (fs :: Nat) = DTCV
 
-instance Signal (DTCV_Proxy fs) where
+instance Signal (DTCV fs) where
+
+data ToDTCV_FromBehaviorFloat (fs :: Nat) = ToDTCV_FromBehaviorFloat
+instance PrimitiveSF (ToDTCV_FromBehaviorFloat fs) (Behavior Double) (DTCV fs)

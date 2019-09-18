@@ -2,12 +2,13 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE FunctionalDependencies #-}
 
 module Vein.Core.Monoidal.Monoidal where
 
 import GHC.Exts (Constraint)
 
-class Monoidal hom (ob_c :: * -> Constraint) p u where
+class Monoidal hom (ob_c :: * -> Constraint) p u | hom -> ob_c p u where
   id :: ob_c a => hom a a
   (>>>) :: (ob_c a, ob_c b, ob_c c) => hom a b -> hom b c -> hom a c
 
