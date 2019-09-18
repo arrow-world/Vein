@@ -6,17 +6,22 @@ module Vein.Core.SimpleSF where
 
 import Vein.Core.Monoidal.Monoidal
 
+-- a type-class of signal types.
 class Signal a where
+
+-- a type-class of primitive signal functions.
 class (Signal a, Signal b) => PrimitiveSF f a b where
 
+-- a signal type such as a pair (product) of two signal types.
 data (><) a b where
   SPair :: (Signal a, Signal b) => a >< b
-
-data SVoid = SVoid
-
-instance Signal SVoid
 instance Signal (a >< b)
 
+-- a signal type of unit.
+data SUnit = SUnit
+instance Signal SUnit
+
+-- a datatype representing signal functions from a signal type `a` to a signal type `b`.
 data SF a b where
   Primitive :: PrimitiveSF f a b => f -> SF a b
 
@@ -26,10 +31,10 @@ data SF a b where
   Product :: (Signal a, Signal b, Signal a', Signal b') =>
     SF a b -> SF a' b' -> SF (a >< a') (b >< b')
 
-  UnitorL :: (Signal a) => SF (SVoid >< a) a
-  UnitorR :: (Signal a) => SF (a >< SVoid) a
-  UnunitorL :: (Signal a) => SF a (SVoid >< a)
-  UnunitorR :: (Signal a) => SF a (a >< SVoid)
+  UnitorL :: (Signal a) => SF (SUnit >< a) a
+  UnitorR :: (Signal a) => SF (a >< SUnit) a
+  UnunitorL :: (Signal a) => SF a (SUnit >< a)
+  UnunitorR :: (Signal a) => SF a (a >< SUnit)
 
   Assoc :: (Signal a, Signal b, Signal c) => SF ((a >< b) >< c) (a >< (b >< c))
   Unassoc :: (Signal a, Signal b, Signal c) => SF (a >< (b >< c)) ((a >< b) >< c)
@@ -37,9 +42,9 @@ data SF a b where
   Swap :: (Signal a, Signal b) => SF (a >< b) (b >< a)
 
   Copy :: (Signal a) => SF a (a >< a)
-  Cut :: (Signal a) => SF a SVoid
+  Cut :: (Signal a) => SF a SUnit
 
-instance Monoidal SF Signal (><) SVoid where
+instance Monoidal SF Signal (><) SUnit where
   id = Id
   (>>>) = Compose
 
@@ -54,9 +59,9 @@ instance Monoidal SF Signal (><) SVoid where
   assoc = Assoc
   unassoc = Unassoc
 
-instance Braided SF Signal (><) SVoid where
+instance Braided SF Signal (><) SUnit where
   braid = Swap
 
-instance Cartesian SF Signal (><) SVoid where
+instance Cartesian SF Signal (><) SUnit where
   diag = Copy
   aug = Cut
