@@ -1,0 +1,57 @@
+{-
+record Source (a: SType) (effs: List EFFECT) where
+  constructor MkSource
+
+  pull : Eff (pull_packet_type a) effs
+  block_push : Eff (push_packet_type a) effs
+
+record Sink (a: SType) (effs: List EFFECT) where
+  constructor MkSink
+
+  block_pull : Eff () effs
+  push : push_packet_type a -> Eff () effs
+
+packet_type : SType -> Pair Type Type
+packet_type $ event a = (Void, a)
+packet_type $ behavior a = (a, Void)
+
+pull_packet_type : SType -> Type
+pull_packet_type = fst . packet_type
+
+push_packet_type : SType -> Type
+push_packet_type = snd . packet_type
+-}
+
+interface Source s (a: SType) (es: List EFFECT) | s
+interface Sink s (a: SType) (es: List EFFECT) | s
+
+translate_eff : Source s a es => Sink s' b es' => (a ~> b) -> s -> s' -> Eff () (es ++ es')
+translate_eff F src snk = 
+
+data Keyboard = MkKeyboard
+Source Keyboard (event KeyInput) [KEYBOARD]
+
+data MousePos = MkMousePos
+Source MousePos (behavior Point2D) [MOUSE]
+
+data StdIn = MkStdIn
+Source StdIn (event String) [STDIO]
+
+data StdOut = MkStdOut
+Sink StdOut (event String) [STDIO]
+
+module base where
+  -- basic signal types
+  stype Event : Type -> SType
+  stype Behavior : Type -> SType
+  stype Spike = Event Unit
+
+  -- basic signal functions
+  sfun Automata : (a -> s -> b*s) -> s -> Event a ~> Event b
+  sfun LiftB : (a -> b) -> Behavior a ~> Behavior b
+  sfun Hold : Event a ~> Behavior a
+  sfun Sample : (Behavior a) >< Spike ~> Event a
+
+  LiftE : (a -> b) -> Event a ~> Event b
+  LiftE f = Automata (pair . f) ()
+

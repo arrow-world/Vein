@@ -1,0 +1,16 @@
+-- Implementation Freeverb by Vein
+
+import dsp (S)
+-- `dsp` is a module for DSP.
+-- S is a signal type constructor and has type `Frq a => a -> SType`. `S frq` means the signal type of discrete-time real-valued signals whose sampling frequency is `frq` [Hz].
+
+-- `A ~> B` is a type of *Signal Function* from `A` to `B`, where A and B are signal types.
+
+Freeverb : S frq ~> S frq
+Freeverb Input = OutL where
+  LBCFs = map (LBCF .84 .2 _ Input) [1557, 1617, 1491, 1422, 1277, 1356, 1188, 1116]
+  Mid = Sum (slice 0 4 LBCFs) + Sum (slice 4 8 LBCFs)
+  OutL = Mid |> $ foldr (|>) $ map (AP 0.5 _) [225, 556, 441, 341]
+
+LBCF : Real a => Integral b => a -> a -> b -> S frq ~> S frq
+LBCF f d N = transferFunctionToSF

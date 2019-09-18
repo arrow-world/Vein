@@ -1,0 +1,4 @@
+module dsp where
+
+stype S : Frq a => a -> SType where
+  S
