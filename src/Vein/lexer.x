@@ -1,20 +1,32 @@
 {
-module Main(main) where
+module Vein.Lexer where
 }
 
 %wrapper "basic"
 
-$letter = [a-zA-Z]
-$nonletter = [~$letter\n]
+$digit = 0-9
+$alpha = [a-zA-Z]
+$sign = [\+\-]
+@name = $alpha [$alpha $digit \_ \']*
 
 tokens :-
-  $nonletter+	;
-  $letter+		{id}
+  $white+                         ;
+  "--".* 	                        ;
+  let                             { \s -> Let }
+  in                              { \s -> In }
+  $sign? $digit+                  { \s -> Int (read s) }
+  @name(\.@name)*                 { \s -> Ident s }
 
 {
-main::IO ()
-main = do
-  s <- getContents
-  let toks = alexScanTokens s
-  mapM_ putStrLn toks
+  data Token =
+    Let
+  | In
+  | Ident [String]
+  | Int Int
+  deriving (Eq, Show)
+
+  main = do
+    s <- getContents
+    let toks = alexScanTokens s
+    print toks
 }
