@@ -4,13 +4,13 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 05f8cc170e23597d6521d89edba2f08e58131fd94f610eb7dc5fe49c36020d74
+-- hash: 2ddf8597ccdb88f9eec20b42d6e0fc4222d27308411bfa0e986a69602182f797
 
 name:           vein
 version:        0.1.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/vein#readme>
-homepage:       https://github.com/githubuser/vein#readme
-bug-reports:    https://github.com/githubuser/vein/issues
+homepage:       https://github.com/arrow-world/vein#readme
+bug-reports:    https://github.com/arrow-world/vein/issues
 author:         Author name here
 maintainer:     example@example.com
 copyright:      2019 Author name here
@@ -23,21 +23,15 @@ extra-source-files:
 
 source-repository head
   type: git
-  location: https://github.com/githubuser/vein
+  location: https://github.com/arrow-world/vein
 
 library
   exposed-modules:
-      Vein.Core.Automata
-      Vein.Core.Behavior
-      Vein.Core.Compile
       Vein.Core.Const.Const
-      Vein.Core.DTCV
-      Vein.Core.Event
+      Vein.Core.Lam2Mon
+      Vein.Core.Lambda.Lambda
       Vein.Core.Monoidal.Monoidal
-      Vein.Core.SimpleSF
-      Vein.Core.SS.Audio
-      Vein.Core.SS.SS
-      Vein.Core.SS.Time
+      Vein.Signal.Types
   other-modules:
       Paths_vein
   hs-source-dirs:
