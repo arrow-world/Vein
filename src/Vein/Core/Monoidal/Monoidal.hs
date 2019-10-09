@@ -5,36 +5,47 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
-module Vein.Core.Monoidal.Monoidal where
+module Vein.Core.Monoidal.Monoidal
+  ( Object, unit, ob, (><)
+  )where
 
 import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Render.Text (putDoc)
 import Data.Text (Text)
 import Data.Fix
 
-data ObjectUnfixed a ob =
+data Object a =
     Unit
-  | Lift a
-  | Ob ob
-  | ProductO ob ob
+  | ProductO (Object a) (Object a)
+  | Ob a
   deriving Eq
 
-newtype Object a = Object (Fix (ObjectUnfixed a))
-  deriving Eq
+unit :: Object a
+unit = Unit
+
+ob :: a -> Object a
+ob = Ob
+
+(><) :: Object a -> Object a -> Object a
+(><) = ProductO
 
 data MorphismUnfixed a m =
-    Id a
+    Id (Object a)
   | Compose m m 
   | ProductM m m
-  | UnitorL a
-  | UnitorR a
-  | UnunitorL a
-  | UnunitorR a
-  | Assoc a a a
-  | Unassoc a a a
+  | UnitorL (Object a)
+  | UnitorR (Object a)
+  | UnunitorL (Object a)
+  | UnunitorR (Object a)
+  | Assoc (Object a) (Object a) (Object a)
+  | Unassoc (Object a) (Object a) (Object a)
+  | Mor m
     deriving Eq
 
-newtype Morphism a = Morphism (Fix (MorphismUnfixed a))
+type Morphism a = Fix (MorphismUnfixed a)
+
+id :: Object a -> MorphismUnfixed a m
+id = Id
 
 data BraidedMorphismUnfixed a m =
     BraidedMor (MorphismUnfixed a m)
@@ -62,13 +73,10 @@ data TracedMorphismUnfixed a m =
 type TracedMorphism a = Fix (TracedMorphismUnfixed a)
 
 
-data CompactClosedObjectUnfixed a ob =
-    CompactClosedOb (ObjectUnfixed a ob)
-  | Dual ob
+data CompactClosedObject a =
+    CompactClosedOb (Object a)
+  | Dual (Object a)
   deriving Eq
-
-newtype CompactClosedObject a =
-  CompactClosedObject (Fix (CompactClosedObjectUnfixed a))
 
 data CompactClosedMorphismUnfixed a m =
     CompactClosedMor (SymmetricMorphismUnfixed a m)

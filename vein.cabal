@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 2ddf8597ccdb88f9eec20b42d6e0fc4222d27308411bfa0e986a69602182f797
+-- hash: c9ddefd22b5ad782958d13a34cf3734efa0090e367ce0d15279b8065fedaaf94
 
 name:           vein
 version:        0.1.0.0
@@ -29,9 +29,11 @@ library
   exposed-modules:
       Vein.Core.Const.Const
       Vein.Core.Lam2Mon
+      Vein.Core.Lambda.Identifier
       Vein.Core.Lambda.Lambda
+      Vein.Core.Lambda.Types
       Vein.Core.Monoidal.Monoidal
-      Vein.Signal.Types
+      Vein.Signal.Event
   other-modules:
       Paths_vein
   hs-source-dirs:
