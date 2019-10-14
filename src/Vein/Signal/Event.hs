@@ -1,9 +1,11 @@
 module Vein.Signal.Event where
 
-import Vein.Signal.Component (Component)
+import qualified Vein.Core.Component as Component
+import qualified Vein.Core.Compile as Compile
 import qualified Vein.Core.Module as M
 
 import qualified LLVM.AST as LLVM_AST
+import qualified Data.Text as T
 
 {-
  - type Event : Type -> Type
@@ -70,9 +72,15 @@ import qualified LLVM.AST as LLVM_AST
  - CosPlay t s = s << toAudioSink $ map cos (2*Math.pi*440*t)
  -}
 
-compile :: Component m a -> Either CompileError LLVM_AST.Module
-compile = undefined
+eventPass = Compile.Pass
+  { Compile.compiler = compiler
+  , Compile.require = fmap (M.readQN . T.pack)
+      [ "Signal.Event"
+      , "Signal.Event.mealy"
+      , "Signal.Event.merge"
+      , "Signal.Event.route"
+      ]
+  }
 
-data CompileError =
-    UnsupportedSignalType
-  | UnsupportedSystemIOConnector
+compiler :: Component.Component -> Either Compile.PassError LLVM_AST.Module
+compiler c = undefined
