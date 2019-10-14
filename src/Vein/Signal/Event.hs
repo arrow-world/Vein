@@ -82,5 +82,5 @@ eventPass = Compile.Pass
       ]
   }
 
-compiler :: Component.Component -> Either Compile.PassError LLVM_AST.Module
-compiler c = undefined
+compiler :: Component.Env -> Component.Component -> Either Compile.PassError LLVM_AST.Module
+compiler = undefined

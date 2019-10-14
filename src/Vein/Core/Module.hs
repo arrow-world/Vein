@@ -16,9 +16,6 @@ readQN = QN . (map Name) . T.splitOn (T.pack ".")
 textsToQN :: [T.Text] -> QN
 textsToQN = QN . (map Name)
 
-data ConstId = TypeId Natural
-  deriving (Eq, Show)
-
 data ModuleMap a = ModuleMap (Map.Map QN a)
 
 union :: ModuleMap a -> ModuleMap a -> ModuleMap a

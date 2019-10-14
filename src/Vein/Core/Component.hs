@@ -10,3 +10,10 @@ type Connector = CC.Object Module.QN
 
 data Component = Component (CC.Morphism Module.QN (Module.QN))
   deriving (Eq, Show)
+
+data Const =
+    CConnector Connector
+  | CComponent Component
+    deriving (Eq, Show)
+
+type Env = Module.ModuleMap Const
