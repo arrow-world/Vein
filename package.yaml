@@ -21,13 +21,13 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
-- llvm-hs
+- llvm-hs >= 9.0.0
 - llvm-hs-pure
 - bytestring
 - prettyprinter
 - text
 - data-fix
-- type-iso
+- containers
 
 library:
   source-dirs: src

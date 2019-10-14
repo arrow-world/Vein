@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c9ddefd22b5ad782958d13a34cf3734efa0090e367ce0d15279b8065fedaaf94
+-- hash: af6b42f56f0b8aaa749bb2e3984c81ab4ae386a2817ec22bd3a011146e30ed92
 
 name:           vein
 version:        0.1.0.0
@@ -29,11 +29,15 @@ library
   exposed-modules:
       Vein.Core.Const.Const
       Vein.Core.Lam2Mon
-      Vein.Core.Lambda.Identifier
-      Vein.Core.Lambda.Lambda
+      Vein.Core.Lambda.Expr
       Vein.Core.Lambda.Types
+      Vein.Core.Module
+      Vein.Core.Monoidal.CompactClosed
       Vein.Core.Monoidal.Monoidal
+      Vein.Core.Monoidal.Types
+      Vein.Signal.Component
       Vein.Signal.Event
+      Vein.Signal.Types
   other-modules:
       Paths_vein
   hs-source-dirs:
@@ -41,12 +45,12 @@ library
   build-depends:
       base >=4.7 && <5
     , bytestring
+    , containers
     , data-fix
-    , llvm-hs
+    , llvm-hs >=9.0.0
     , llvm-hs-pure
     , prettyprinter
     , text
-    , type-iso
   default-language: Haskell2010
 
 executable vein-exe
@@ -59,12 +63,12 @@ executable vein-exe
   build-depends:
       base >=4.7 && <5
     , bytestring
+    , containers
     , data-fix
-    , llvm-hs
+    , llvm-hs >=9.0.0
     , llvm-hs-pure
     , prettyprinter
     , text
-    , type-iso
     , vein
   default-language: Haskell2010
 
@@ -79,11 +83,11 @@ test-suite vein-test
   build-depends:
       base >=4.7 && <5
     , bytestring
+    , containers
     , data-fix
-    , llvm-hs
+    , llvm-hs >=9.0.0
     , llvm-hs-pure
     , prettyprinter
     , text
-    , type-iso
     , vein
   default-language: Haskell2010
