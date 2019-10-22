@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Vein.Core.Monoidal.Monoidal where
@@ -135,14 +136,14 @@ instance Arrow m a => Arrow (Symmetric m a) a where
   doco (Symmetric f) = doco f
 
 
-data Traced m a =
+data Traced m =
     Traced m
   | Trace m
-    deriving (Eq, Functor)
+    deriving (Eq, Functor, Show)
 
-type TracedMorphism m a = Morphism (Traced m a)
+type TracedMorphism m a = Morphism (Traced m) a
 
-instance Arrow m a => Arrow (Traced m a) a where
+instance Arrow m a => Arrow (Traced m) a where
   doco f = case f of
     Traced g -> doco g
     Trace g  -> (dom, cod)

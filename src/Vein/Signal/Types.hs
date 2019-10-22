@@ -15,7 +15,7 @@ tBandlimitedAnalog =
   LT.NewType { LT.paramTypes = [LT.Type $ M.readQN $ T.pack "Signal.Analog.Frequency"] }
 
 mod =
-  M.ModuleMap $ Map.fromList $ map (\(s,t) -> (M.readQN $ T.pack s, t))
+  Map.fromList $ map (\(s,t) -> (M.readQN $ T.pack s, t))
     [ ("Signal.Behavior", tBehavior)
     , ("Signal.Event", tEvent)
     , ("Signal.Analog.Bandlimited", tBandlimitedAnalog)

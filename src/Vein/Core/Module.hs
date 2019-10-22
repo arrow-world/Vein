@@ -8,6 +8,7 @@ data Name = Name T.Text
   deriving (Eq, Show, Ord)
 
 data Named a = Named { named :: a , name :: Name }
+  deriving (Eq, Show)
 
 data QN = QN [Name]
   deriving (Eq, Show, Ord)
@@ -15,10 +16,10 @@ data QN = QN [Name]
 readQN :: T.Text -> QN
 readQN = QN . (map Name) . T.splitOn (T.pack ".")
 
+showQN :: QN -> T.Text
+showQN (QN names) = T.intercalate (T.pack ".") $ fmap (\(Name t) -> t) names
+
 textsToQN :: [T.Text] -> QN
 textsToQN = QN . (map Name)
 
-data ModuleMap a = ModuleMap (Map.Map QN a)
-
-union :: ModuleMap a -> ModuleMap a -> ModuleMap a
-union (ModuleMap m0) (ModuleMap m1) = ModuleMap $ Map.union m0 m1
+type ModuleMap a = Map.Map QN a
