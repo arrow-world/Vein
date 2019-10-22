@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5f94d9d96f6fdfd1a3f9781576957e79e4a8fcfe5a7e5d6e10da6b04ae117a28
+-- hash: e5be0f281eb38e7ad6c8228a79733b16344fe05096719a53196a56f9c41881e7
 
 name:           vein
 version:        0.1.0.0
@@ -29,6 +29,7 @@ library
   exposed-modules:
       Vein.Core.Compile
       Vein.Core.Component
+      Vein.Core.Const
       Vein.Core.Lam2Mon
       Vein.Core.Lambda.Expr
       Vein.Core.Lambda.Types
@@ -49,6 +50,7 @@ library
     , data-fix
     , llvm-hs >=9.0.0
     , llvm-hs-pure
+    , mtl
     , prettyprinter
     , text
   default-language: Haskell2010
@@ -67,6 +69,7 @@ executable vein-exe
     , data-fix
     , llvm-hs >=9.0.0
     , llvm-hs-pure
+    , mtl
     , prettyprinter
     , text
     , vein
@@ -87,6 +90,7 @@ test-suite vein-test
     , data-fix
     , llvm-hs >=9.0.0
     , llvm-hs-pure
+    , mtl
     , prettyprinter
     , text
     , vein

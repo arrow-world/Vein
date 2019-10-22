@@ -7,9 +7,10 @@ import qualified Vein.Core.Monoidal.CompactClosed as CC
 import qualified Vein.Core.Module as Module
 
 type Connector = CC.Object Module.QN
+type NamedConnector = CC.Object (Module.Named Module.QN)
 
-data Component = Component (CC.Morphism Module.QN (Module.QN))
-  deriving (Eq, Show)
+type Component = CC.Morphism Module.QN Module.QN
+type NamedComponent = Module.Named (CC.Morphism (Module.Named Module.QN) (Module.Named Module.QN))
 
 data Const =
     CConnector Connector

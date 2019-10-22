@@ -28,6 +28,7 @@ dependencies:
 - text
 - data-fix
 - containers
+- mtl
 
 library:
   source-dirs: src

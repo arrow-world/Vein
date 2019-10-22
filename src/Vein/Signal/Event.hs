@@ -72,8 +72,8 @@ import qualified Data.Text as T
  - CosPlay t s = s << toAudioSink $ map cos (2*Math.pi*440*t)
  -}
 
-eventPass = Compile.Pass
-  { Compile.compiler = compiler
+compiler = Compile.Compiler
+  { Compile.compiler = compiler'
   , Compile.require = fmap (M.readQN . T.pack)
       [ "Signal.Event"
       , "Signal.Event.mealy"
@@ -82,5 +82,5 @@ eventPass = Compile.Pass
       ]
   }
 
-compiler :: Component.Env -> Component.Component -> Either Compile.PassError LLVM_AST.Module
-compiler = undefined
+compiler' :: Component.Env -> Component.Component -> Either Compile.PassError LLVM_AST.Module
+compiler' = undefined

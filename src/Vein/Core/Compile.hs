@@ -5,12 +5,12 @@ import qualified Vein.Core.Module as M
 
 import qualified LLVM.AST as LLVM_AST
 
-data Pass = Pass
+data Compiler = Compiler
     { compiler :: Env -> Component -> Either PassError LLVM_AST.Module
     , require :: [M.QN]
     }
 
-compile :: [Pass] -> Env -> Component -> Either CompileError LLVM_AST.Module
+compile :: [Compiler] -> Env -> Component -> Either CompileError LLVM_AST.Module
 compile [] _ _ = Left NoPass
 compile (p:ps) env f = case (compiler p) env f of
   Left e -> case e of

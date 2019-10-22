@@ -7,6 +7,8 @@ import qualified Data.Map.Lazy as Map
 data Name = Name T.Text
   deriving (Eq, Show, Ord)
 
+data Named a = Named { named :: a , name :: Name }
+
 data QN = QN [Name]
   deriving (Eq, Show, Ord)
 
