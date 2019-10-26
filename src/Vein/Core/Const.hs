@@ -1,15 +1,20 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE TupleSections #-}
 
 module Vein.Core.Const where
 
 import qualified Vein.Core.Compile as Compile
 import qualified Vein.Core.Module as M
 import qualified Vein.Core.Component as Component
-import Vein.Core.Monoidal.Monoidal ( Arrow (doco, domain, codomain)
-                                   , (><)
+import qualified Vein.Core.Monoidal.Monoidal as Monoidal
+import Vein.Core.Monoidal.Monoidal ( (><)
                                    , Object (Object, Unit, ProductO)
                                    , Morphism
                                    , Traced
+                                   , codA
+                                   , docoA
+                                   , docoTraced
                                    )
 
 import qualified LLVM.AST as LA
@@ -21,10 +26,64 @@ import Control.Monad.State (State, get, modify)
 import Data.Char (isAscii)
 import Data.String (fromString)
 import Data.Word (Word32)
+import Numeric.Natural (Natural)
+
+data Value =
+    Val { valCtor :: M.QN , valParams :: [Value] }
+  | ValBinInt { valBinInt :: Integer , valBits :: Word32 }
+  | ValFP32 Float
+  | ValFP64 Double
+  | ValNat Natural
+  deriving (Eq, Show)
+
+type FunctionBase = M.Named Value
+
+data TypeValue =
+    TypeVal { typeCtor :: M.QN , typeParams :: [Value] }
+  deriving (Eq, Show)
+
+type TypeBase = M.Named TypeValue
+
+type Function = Morphism (Traced FunctionBase) TypeBase
+type Type = Object TypeBase
+
+docoVal :: Env -> Value -> Maybe (Type, Type)
+docoVal env v =
+  case v of
+    Val { valCtor , valParams } ->
+      case Map.lookup valCtor env of
+        Just def -> case def of
+          DefFunc f -> docoA (docoTraced doco') f
+            where doco' (M.Named v' _) = docoVal env v'
+          _ -> Nothing
+        
+        Nothing -> docoValPrim valCtor valParams
+
+    ValBinInt { valBinInt , valBits } ->
+      Just $ docoConst TypeVal { typeCtor = M.readQN (T.pack "Data.Binary.Int")
+                               , typeParams = [ValNat $ fromIntegral valBits]
+                               }
+    
+    ValFP32 f ->
+      Just $ docoConst
+        TypeVal { typeCtor = M.readQN (T.pack "Data.Binary.FP32") , typeParams = [] }
+    
+    ValFP64 f ->
+      Just $ docoConst
+        TypeVal { typeCtor = M.readQN (T.pack "Data.Binary.FP64") , typeParams = [] }
+    
+    ValNat n ->
+      Just $ docoConst
+        TypeVal { typeCtor = M.readQN (T.pack "Data.Natural.Nat") , typeParams = [] }
+
+  where
+    docoConst x = (Unit , Object (M.Named x $ M.Name $ T.pack ""))
 
 
-type Function = Morphism (Traced M.QN) M.QN
-type Type = Object (M.Named M.QN)
+docoValPrim :: M.QN -> [Value] -> Maybe (Type, Type)
+docoValPrim ctor params = case T.unpack $ M.showQN ctor of
+  _ -> Nothing
+
 
 data Definition =
     DefFunc Function
@@ -39,7 +98,7 @@ compileFunc env c = do
   return $ Right $ LA.GlobalDefinition LA.functionDefaults
     { LAG.name = fname
     , LAG.parameters =
-      ( [
+      ( [ 
         ]
       , False
       )
@@ -52,13 +111,13 @@ data Error
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type
 compileType env t =
   case t of
-    Object (M.Named qn _) ->
-      case Map.lookup qn env of
+    Object (M.Named tv _) ->
+      case Map.lookup (typeCtor tv) env of
         Just def -> case def of
           DefType x -> compileType env x
-          DefFunc _ -> Left UnexpectedFunction
+          DefFunc fn -> Left UnexpectedFunction
 
-        Nothing -> maybe (Left UndefinedType) Right (lookupPrimitiveTypes qn)
+        Nothing -> maybe (Left UndefinedType) Right (compilePrimitiveTypes tv)
 
     Unit -> Right LA.VoidType
 
@@ -69,14 +128,15 @@ compileType env t =
         , LA.elementTypes = elementTypes
         }
 
-lookupPrimitiveTypes :: M.QN -> Maybe LA.Type
-lookupPrimitiveTypes qn = case M.showQN qn of
+compilePrimitiveTypes :: TypeValue -> Maybe LA.Type
+compilePrimitiveTypes tv = case T.unpack $ M.showQN (typeCtor tv) of
   _ -> Nothing
 
 data TypeCompilationError =
     UndefinedType
   | UnexpectedFunction
   deriving (Eq, Show)
+
 
 type UnNameId = Word
 
@@ -96,36 +156,3 @@ genUnName = do
   n <- get
   modify (+1)
   return $ LAN.UnName n
-
-{-
-compiler = Compile.Compiler
-  { Compile.compiler = compile
-  , Compile.require = fmap (M.readQN . T.pack)
-      [ "Data.Natural.Nat"
-      , "Data.Natural.succ"
-      , "Data.Natural.pred"
-      , "Data.Natural.tryPred"
-      , "Data.Natural.plus"
-      , "Data.Natural.tryMinus"
-      , "Data.Natural.monus"
-      , "Data.Natural.times"
-      , "Data.Natural.div"
-      , "Data.Natural.mod"
-      , "Data.Integral.Int"
-      , "Data.Integral.succ"
-      , "Data.Integral.pred"
-      , "Data.Integral.plus"
-      , "Data.Integral.minus"
-      , "Data.Integral.times"
-      , "Data.Integral.div"
-      , "Data.Integral.mod"
-      , "Data.Bool.Bool"
-      , "Data.Bool.true"
-      , "Data.Bool.false"
-      , "Data.Bool.and"
-      , "Data.Bool.or"
-      , "Data.Bool.not"
-      , "Data.Bool.if"
-      ]
-  }
--}

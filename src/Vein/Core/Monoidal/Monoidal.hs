@@ -55,6 +55,34 @@ data Morphism m a =
   | Morphism m
     deriving (Eq, Functor, Show)
 
+
+docoA :: Applicative f =>
+  (m -> f (Object a, Object a)) -> Morphism m a -> f (Object a, Object a)
+docoA doco' f =
+  case f of
+    Id x          -> pure (x, x)
+    Compose g h   -> (,) <$> dom g <*> dom h
+    ProductM g h  -> (,) <$> d <*> c
+      where d = (><) <$> dom g <*> dom h
+            c = (><) <$> cod g <*> cod h
+    UnitorL x     -> pure (Unit >< x, x)
+    UnitorR x     -> pure (x >< Unit, x)
+    UnunitorL x   -> pure (x, Unit >< x)
+    UnunitorR x   -> pure (x, x >< Unit)
+    Assoc x y z   -> pure ((x >< y) >< z, x >< (y >< z))
+    Unassoc x y z -> pure (x >< (y >< z), (x >< y) >< z)
+    Morphism g    -> doco' g
+  where
+    dom = domA doco'
+    cod = codA doco'
+
+domA :: Applicative f => (m -> f (Object a, Object a)) -> Morphism m a -> f (Object a)
+domA doco' f = fst <$> docoA doco' f
+
+codA :: Applicative f => (m -> f (Object a, Object a)) -> Morphism m a -> f (Object a)
+codA doco' f = snd <$> docoA doco' f
+
+
 instance Arrow m a => Arrow (Morphism m a) a where
   domain f = case f of
     Id x          -> x
@@ -142,6 +170,13 @@ data Traced m =
     deriving (Eq, Functor, Show)
 
 type TracedMorphism m a = Morphism (Traced m) a
+
+docoTraced :: Applicative f =>
+  (m -> f (Object a, Object a)) -> Traced m -> f (Object a, Object a)
+docoTraced doco' f = case f of
+  Traced g -> doco' g
+  Trace g  -> doco'' <$> doco' g
+    where doco'' (ProductO dom _, ProductO cod _) = (dom, cod)
 
 instance Arrow m a => Arrow (Traced m) a where
   doco f = case f of
