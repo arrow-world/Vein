@@ -119,9 +119,11 @@ compileType env t =
       case Map.lookup (typeCtor tv) env of
         Just def -> case def of
           DefType x -> compileType env x
-          DefFunc fn -> Left UnexpectedFunction
+          DefFunc fn -> lookupPrimTy
 
-        Nothing -> maybe (Left UndefinedType) Right (compilePrimitiveTypes tv)
+        Nothing -> lookupPrimTy
+      where
+        lookupPrimTy = maybe (Left UndefinedType) Right (compilePrimitiveTypes tv)
 
     Unit -> Right LA.VoidType
 
@@ -138,7 +140,6 @@ compilePrimitiveTypes tv = case T.unpack $ M.showQN (typeCtor tv) of
 
 data TypeCompilationError =
     UndefinedType
-  | UnexpectedFunction
   deriving (Eq, Show)
 
 
