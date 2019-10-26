@@ -47,14 +47,19 @@ type TypeBase = M.Named TypeValue
 type Function = Morphism (Traced FunctionBase) TypeBase
 type Type = Object TypeBase
 
+
+docoFn :: Env -> Function -> Maybe (Type, Type)
+docoFn env f = docoA (docoTraced doco') f
+  where doco' (M.Named v _) = docoVal env v
+
+
 docoVal :: Env -> Value -> Maybe (Type, Type)
 docoVal env v =
   case v of
     Val { valCtor , valParams } ->
       case Map.lookup valCtor env of
         Just def -> case def of
-          DefFunc f -> docoA (docoTraced doco') f
-            where doco' (M.Named v' _) = docoVal env v'
+          DefFunc f -> docoFn env f
           _ -> Nothing
         
         Nothing -> docoValPrim valCtor valParams
@@ -78,7 +83,6 @@ docoVal env v =
 
   where
     docoConst x = (Unit , Object (M.Named x $ M.Name $ T.pack ""))
-
 
 docoValPrim :: M.QN -> [Value] -> Maybe (Type, Type)
 docoValPrim ctor params = case T.unpack $ M.showQN ctor of
