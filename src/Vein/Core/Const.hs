@@ -169,10 +169,6 @@ assign f m x =
     Morphism m1 -> f m1 x
 
 
-flattenCherry :: Cherry a -> [a]
-flattenCherry (Fruit x) = [x]
-flattenCherry (Branch x y) = flattenCherry x ++ flattenCherry y
-
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type
 compileType env t =
   case t of
