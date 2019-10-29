@@ -15,18 +15,31 @@ import Vein.Core.Monoidal.Monoidal ( (><)
                                    , codA
                                    , docoA
                                    , docoTraced
+                                   , Morphism (Id
+                                              , Compose
+                                              , ProductM
+                                              , UnitorL
+                                              , UnitorR
+                                              , UnunitorL
+                                              , UnunitorR
+                                              , Assoc
+                                              , Unassoc
+                                              , Morphism
+                                              )
                                    )
+import Vein.Core.Cherry (Cherry (Fruit, Branch), CherryM)
 
 import qualified LLVM.AST as LA
 import qualified LLVM.AST.Global as LAG
 import qualified LLVM.AST.Name as LAN
 import qualified Data.Text as T
 import qualified Data.Map.Lazy as Map
-import Control.Monad.State (State, get, modify)
+import Control.Monad.State (State, get, modify, StateT, lift, state, runState)
 import Data.Char (isAscii)
 import Data.String (fromString)
 import Data.Word (Word32)
 import Numeric.Natural (Natural)
+import Control.Arrow (left)
 
 data Value =
     Val { valCtor :: M.QN , valParams :: [Value] }
@@ -96,20 +109,65 @@ data Definition =
 
 type Env = M.ModuleMap Definition
 
-compileFunc :: Env -> M.Named Function -> State UnNameId (Either Error LA.Definition)
-compileFunc env c = do
-  fname <- toLLVMName $ M.name c
-  return $ Right $ LA.GlobalDefinition LA.functionDefaults
-    { LAG.name = fname
-    , LAG.parameters =
-      ( [ 
-        ]
-      , False
-      )
-    }
+compileFunc :: Env -> M.Named Function -> StateT UnNameId (Either Error) LA.Definition
+compileFunc env (M.Named f name) = do
+  (dom, cod) <- lift $ maybe (Left DoCoFnError) Right $ docoFn env f
+  paramType <- lift $ left TypeCompilationError $ compileType env dom
+  retType <- lift $ left TypeCompilationError $ compileType env cod
+
+  fname <- hoist $ toLLVMName name
+  argname <- hoist $ genUnName
+  
+  lift $ Right $ LA.GlobalDefinition LA.functionDefaults
+      { LAG.name = fname
+      , LAG.parameters = ( [ LAG.Parameter paramType argname [] ] , False )
+      , LAG.returnType = retType
+      , LAG.basicBlocks =
+          [
+          ]
+      }
+
+  where
+    hoist = state . runState
 
 
-data Error
+data Error =
+    TypeCompilationError TypeCompilationError
+  | DoCoFnError
+  deriving (Eq, Show)
+
+
+assign :: (m -> CherryM a -> Maybe (CherryM a)) -> Morphism m o -> CherryM a -> Maybe (CherryM a)
+assign f m x =
+  case m of
+    Id _ -> Just x
+
+    Compose m1 m2 -> (assign f m1 x) >>= (assign f m2)
+
+    ProductM m1 m2 -> Branch <$> (assign f m1 x) <*> (assign f m2 x)
+
+    UnitorL _ -> case x of
+      Branch x y -> Just y
+      _ -> Nothing
+
+    UnitorR _ -> case x of
+      Branch x y -> Just x
+      _ -> Nothing
+    
+    UnunitorL _ -> Just $ Branch x (Fruit Nothing)
+
+    UnunitorR _ -> Just $ Branch x (Fruit Nothing)
+
+    Assoc _ _ _ -> case x of
+      Branch (Branch x y) z -> Just $ Branch x (Branch y z)
+      _ -> Nothing
+    
+    Unassoc _ _ _ -> case x of
+      Branch x (Branch y z) -> Just $ Branch (Branch x y) z
+      _ -> Nothing
+    
+    Morphism m1 -> f m1 x
+
 
 
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type
@@ -147,7 +205,7 @@ type UnNameId = Word
 
 toLLVMName :: M.Name -> State UnNameId LAN.Name
 toLLVMName (M.Name name) =
-  if all isAscii $ T.unpack name then
+  if (all isAscii $ T.unpack name) && (not $ name == T.empty) then
     pure $ LAN.Name $ fromString $ T.unpack name
   else
     genUnName
