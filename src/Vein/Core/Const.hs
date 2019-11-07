@@ -32,14 +32,20 @@ import Vein.Core.Cherry (Cherry (Fruit, Branch), CherryM)
 import qualified LLVM.AST as LA
 import qualified LLVM.AST.Global as LAG
 import qualified LLVM.AST.Name as LAN
+import qualified LLVM.AST.Instruction as LAI
 import qualified Data.Text as T
 import qualified Data.Map.Lazy as Map
+import qualified Data.Default as Default
 import Control.Monad.State (State, get, modify, StateT, lift, state, runState)
 import Data.Char (isAscii)
 import Data.String (fromString)
 import Data.Word (Word32)
 import Numeric.Natural (Natural)
 import Control.Arrow (left)
+import LLVM.AST.Instruction (Named ((:=)), Instruction (Add))
+import LLVM.AST.Operand (Operand)
+import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr)
+import LLVM.IRBuilder.Instruction (add)
 
 data Value =
     Val { valCtor :: M.QN , valParams :: [Value] }
@@ -131,42 +137,56 @@ compileFunc env (M.Named f name) = do
     hoist = state . runState
 
 
+compileFuncPrim ::  MonadIRBuilder m =>
+                      M.QN -> [Value] -> [Operand] -> m Operand
+compileFuncPrim f params ops = case T.unpack $ M.showQN f of
+  "Data.Binary.Int.add" ->
+    case ops of
+      [a,b] -> Just $ do
+        blockName <- genUnName
+        retName <- genUnName
+        return $ emitInstr 
+                    []
+                    ( LA.BasicBlock
+                        blockName
+                        [ retName := Add { LAI.operand0 = LA.LocalReference inty a
+                                         , LAI.operand1 = LA.LocalReference inty b
+                                         , LAI.nsw = False
+                                         , LAI.nuw = False
+                                         , LAI.metadata = []
+                                         }
+                        ]
+                    )
+                    retName
+      where
+        [ValNat nBits] = params
+        inty = LA.IntegerType { LA.typeBits = fromIntegral nBits }
+
 data Error =
     TypeCompilationError TypeCompilationError
   | DoCoFnError
   deriving (Eq, Show)
 
 
-assign :: (m -> CherryM a -> Maybe (CherryM a)) -> Morphism m o -> CherryM a -> Maybe (CherryM a)
-assign f m x =
+
+
+assign :: (m -> [a] -> [a]) -> Morphism m o -> [a] -> [a]
+assign f m xs =
   case m of
-    Id _ -> Just x
+    Compose m1 m2 -> assign f m2 $ assign f m1 xs
+    ProductM m1 m2 -> assign f m1 xs ++ assign f m2 xs
+    Morphism m' -> f m' xs
+    Id _ -> xs
+    UnitorL x -> xs
+    UnitorR x -> xs
+    UnunitorL _ -> xs
+    UnunitorR _ -> xs
+    Assoc _ _ _ -> xs
+    Unassoc _ _ _ -> xs
 
-    Compose m1 m2 -> (assign f m1 x) >>= (assign f m2)
-
-    ProductM m1 m2 -> Branch <$> (assign f m1 x) <*> (assign f m2 x)
-
-    UnitorL _ -> case x of
-      Branch x y -> Just y
-      _ -> Nothing
-
-    UnitorR _ -> case x of
-      Branch x y -> Just x
-      _ -> Nothing
-    
-    UnunitorL _ -> Just $ Branch x (Fruit Nothing)
-
-    UnunitorR _ -> Just $ Branch x (Fruit Nothing)
-
-    Assoc _ _ _ -> case x of
-      Branch (Branch x y) z -> Just $ Branch x (Branch y z)
-      _ -> Nothing
-    
-    Unassoc _ _ _ -> case x of
-      Branch x (Branch y z) -> Just $ Branch (Branch x y) z
-      _ -> Nothing
-    
-    Morphism m1 -> f m1 x
+lenOfOb :: Object a -> Int
+lenOfOb (ProductO x y) = lenOfOb x + lenOfOb y
+lenOfOb _ = 1
 
 
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type

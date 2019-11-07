@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 54ee3f23d07baaf06ac7640365d0bb72000ae31820baca49cd9f12f155c370b4
+-- hash: 73784af2182f9caea94749cd3a37629a85cf216b08693c674a1d6353149b399c
 
 name:           vein
 version:        0.1.0.0
@@ -48,6 +48,7 @@ library
       base >=4.7 && <5
     , bytestring
     , containers
+    , data-default
     , data-fix
     , llvm-hs >=9.0.0
     , llvm-hs-pure
@@ -67,6 +68,7 @@ executable vein-exe
       base >=4.7 && <5
     , bytestring
     , containers
+    , data-default
     , data-fix
     , llvm-hs >=9.0.0
     , llvm-hs-pure
@@ -88,6 +90,7 @@ test-suite vein-test
       base >=4.7 && <5
     , bytestring
     , containers
+    , data-default
     , data-fix
     , llvm-hs >=9.0.0
     , llvm-hs-pure

@@ -29,6 +29,7 @@ dependencies:
 - data-fix
 - containers
 - mtl
+- data-default
 
 library:
   source-dirs: src
