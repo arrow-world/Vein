@@ -42,7 +42,7 @@ import Data.String (fromString)
 import Data.Word (Word32)
 import Numeric.Natural (Natural)
 import Control.Arrow (left)
-import LLVM.AST.Instruction (Named ((:=)), Instruction (Add))
+import LLVM.AST.Instruction ( Named ((:=)) )
 import LLVM.AST.Operand (Operand)
 import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr)
 import LLVM.IRBuilder.Instruction (add)
@@ -140,27 +140,7 @@ compileFunc env (M.Named f name) = do
 compileFuncPrim ::  MonadIRBuilder m =>
                       M.QN -> [Value] -> [Operand] -> m Operand
 compileFuncPrim f params ops = case T.unpack $ M.showQN f of
-  "Data.Binary.Int.add" ->
-    case ops of
-      [a,b] -> Just $ do
-        blockName <- genUnName
-        retName <- genUnName
-        return $ emitInstr 
-                    []
-                    ( LA.BasicBlock
-                        blockName
-                        [ retName := Add { LAI.operand0 = LA.LocalReference inty a
-                                         , LAI.operand1 = LA.LocalReference inty b
-                                         , LAI.nsw = False
-                                         , LAI.nuw = False
-                                         , LAI.metadata = []
-                                         }
-                        ]
-                    )
-                    retName
-      where
-        [ValNat nBits] = params
-        inty = LA.IntegerType { LA.typeBits = fromIntegral nBits }
+  "Data.Binary.Int.add" -> add a b where [a,b] = ops
 
 data Error =
     TypeCompilationError TypeCompilationError
