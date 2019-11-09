@@ -49,7 +49,9 @@ import LLVM.AST.Instruction ( Named ((:=)) )
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
 import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr, block, freshUnName)
 import LLVM.IRBuilder.Instruction (add, sub, mul, sdiv, br, condBr, icmp, phi)
-import LLVM.AST.Constant ( Constant (Int), integerBits, integerValue )
+import LLVM.AST.Constant ( Constant (Int), integerBits, integerValue
+                         , sizeof, unsignedIntegerValue
+                         )
 import LLVM.AST.Typed ( Typed (typeOf) )
 
 data Value =
@@ -193,25 +195,19 @@ flattenOb (Object x) = [x]
 flattenOb Unit = []
 flattenOb (ProductO x y) = flattenOb x ++ flattenOb y
 
+stdenv :: Env
+stdenv = Map.empty
 
-maybeType :: Value -> Maybe LA.Type
-maybeType t = compilePrimTypes TypeVal { typeCtor = M.readQN $ T.pack "Maybe"
-                                       , typeParams = [t]
-                                        }
+maybeType :: Value -> Either TypeCompilationError LA.Type
+maybeType t = compileTypeValue stdenv TypeVal { typeCtor = M.readQN $ T.pack "Maybe"
+                                              , typeParams = [t]
+                                              }
 
 
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type
 compileType env t =
   case t of
-    Object (M.Named tv _) ->
-      case Map.lookup (typeCtor tv) env of
-        Just def -> case def of
-          DefType x -> compileType env x
-          DefFunc fn -> lookupPrimTy
-
-        Nothing -> lookupPrimTy
-      where
-        lookupPrimTy = maybe (Left UndefinedType) Right (compilePrimTypes tv)
+    Object (M.Named tv _) -> compileTypeValue env tv
 
     Unit -> Right LA.VoidType
 
@@ -222,12 +218,37 @@ compileType env t =
         , LA.elementTypes = elementTypes
         }
 
-compilePrimTypes :: TypeValue -> Maybe LA.Type
-compilePrimTypes tv = case T.unpack $ M.showQN (typeCtor tv) of
-  _ -> Nothing
+compileTypeValue :: Env -> TypeValue -> Either TypeCompilationError LA.Type
+compileTypeValue env tv =
+  case Map.lookup (typeCtor tv) env of
+    Just def -> case def of
+      DefType x -> compileType env x
+      DefFunc fn -> lookupPrimTy
+
+    Nothing -> lookupPrimTy
+  where
+    lookupPrimTy = case compilePrimTypes env tv of
+      Left UnsupportedPrimType -> Left UndefinedType
+      x -> x
+
+compilePrimTypes :: Env -> TypeValue -> Either TypeCompilationError LA.Type
+compilePrimTypes env tv = case T.unpack $ M.showQN (typeCtor tv) of
+  "Data.Either" -> do
+    let [Val a xs, Val b ys] = typeParams tv
+
+    ts <- mapM (compileTypeValue env) [TypeVal a xs, TypeVal b ys]
+
+    let sz = maximum $ fmap (unsignedIntegerValue . sizeof) ts
+        byteBits = 8
+        
+    return $ LA.IntegerType $ fromIntegral $ sz * byteBits
+
+        
+  _ -> Left UnsupportedPrimType
 
 data TypeCompilationError =
     UndefinedType
+  | UnsupportedPrimType
   deriving (Eq, Show)
 
 
