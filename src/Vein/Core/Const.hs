@@ -1,6 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE RecursiveDo #-}
 
 module Vein.Core.Const where
 
@@ -33,6 +34,7 @@ import qualified LLVM.AST as LA
 import qualified LLVM.AST.Global as LAG
 import qualified LLVM.AST.Name as LAN
 import qualified LLVM.AST.Instruction as LAI
+import qualified LLVM.AST.IntegerPredicate as IntegerPredicate
 import qualified Data.Text as T
 import qualified Data.Map.Lazy as Map
 import qualified Data.Default as Default
@@ -42,10 +44,13 @@ import Data.String (fromString)
 import Data.Word (Word32)
 import Numeric.Natural (Natural)
 import Control.Arrow (left)
+import Control.Monad.State (MonadFix)
 import LLVM.AST.Instruction ( Named ((:=)) )
-import LLVM.AST.Operand (Operand)
-import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr)
-import LLVM.IRBuilder.Instruction (add)
+import LLVM.AST.Operand ( Operand (ConstantOperand) )
+import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr, block, freshUnName)
+import LLVM.IRBuilder.Instruction (add, sub, mul, sdiv, br, condBr, icmp, phi)
+import LLVM.AST.Constant ( Constant (Int), integerBits, integerValue )
+import LLVM.AST.Typed ( Typed (typeOf) )
 
 data Value =
     Val { valCtor :: M.QN , valParams :: [Value] }
@@ -136,18 +141,33 @@ compileFunc env (M.Named f name) = do
   where
     hoist = state . runState
 
-
-compileFuncPrim ::  MonadIRBuilder m =>
-                      M.QN -> [Value] -> [Operand] -> m Operand
+compileFuncPrim :: (MonadFix m, MonadIRBuilder m) => M.QN -> [Value] -> [Operand] -> m Operand
 compileFuncPrim f params ops = case T.unpack $ M.showQN f of
   "Data.Binary.Int.add" -> add a b where [a,b] = ops
+  "Data.Binary.Int.sub" -> sub a b where [a,b] = ops
+  "Data.Binary.Int.mul" -> mul a b where [a,b] = ops
+  "Data.Binary.Int.div" ->
+    mdo
+      isZero <- icmp IntegerPredicate.EQ b $ ConstantOperand (Int nBits 0)
+      condBr isZero ifThen ifElse
+
+      ifThen <- block
+      tVal <- sdiv a b
+      br ifExit
+
+      ifElse <- block
+      fVal <- sdiv a b
+
+      ifExit <- block
+      phi [(tVal, ifThen), (fVal, ifElse)]
+    where
+      [a,b] = ops
+      LA.IntegerType nBits = typeOf a
 
 data Error =
     TypeCompilationError TypeCompilationError
   | DoCoFnError
   deriving (Eq, Show)
-
-
 
 
 assign :: (m -> [a] -> [a]) -> Morphism m o -> [a] -> [a]
@@ -168,6 +188,17 @@ lenOfOb :: Object a -> Int
 lenOfOb (ProductO x y) = lenOfOb x + lenOfOb y
 lenOfOb _ = 1
 
+flattenOb :: Object a -> [a]
+flattenOb (Object x) = [x]
+flattenOb Unit = []
+flattenOb (ProductO x y) = flattenOb x ++ flattenOb y
+
+
+maybeType :: Value -> Maybe LA.Type
+maybeType t = compilePrimTypes TypeVal { typeCtor = M.readQN $ T.pack "Maybe"
+                                       , typeParams = [t]
+                                        }
+
 
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type
 compileType env t =
@@ -180,7 +211,7 @@ compileType env t =
 
         Nothing -> lookupPrimTy
       where
-        lookupPrimTy = maybe (Left UndefinedType) Right (compilePrimitiveTypes tv)
+        lookupPrimTy = maybe (Left UndefinedType) Right (compilePrimTypes tv)
 
     Unit -> Right LA.VoidType
 
@@ -191,8 +222,8 @@ compileType env t =
         , LA.elementTypes = elementTypes
         }
 
-compilePrimitiveTypes :: TypeValue -> Maybe LA.Type
-compilePrimitiveTypes tv = case T.unpack $ M.showQN (typeCtor tv) of
+compilePrimTypes :: TypeValue -> Maybe LA.Type
+compilePrimTypes tv = case T.unpack $ M.showQN (typeCtor tv) of
   _ -> Nothing
 
 data TypeCompilationError =
