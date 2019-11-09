@@ -62,13 +62,13 @@ data Value =
   | ValNat Natural
   deriving (Eq, Show)
 
-type FunctionBase = M.Named Value
+type FunctionBase = Value
 
 data TypeValue =
     TypeVal { typeCtor :: M.QN , typeParams :: [Value] }
   deriving (Eq, Show)
 
-type TypeBase = M.Named TypeValue
+type TypeBase = TypeValue
 
 type Function = Morphism (Traced FunctionBase) TypeBase
 type Type = Object TypeBase
@@ -76,7 +76,7 @@ type Type = Object TypeBase
 
 docoFn :: Env -> Function -> Maybe (Type, Type)
 docoFn env f = docoA (docoTraced doco') f
-  where doco' (M.Named v _) = docoVal env v
+  where doco' v = docoVal env v
 
 
 docoVal :: Env -> Value -> Maybe (Type, Type)
@@ -108,7 +108,7 @@ docoVal env v =
         TypeVal { typeCtor = M.readQN (T.pack "Data.Natural.Nat") , typeParams = [] }
 
   where
-    docoConst x = (Unit , Object (M.Named x $ M.Name $ T.pack ""))
+    docoConst x = (Unit , Object x)
 
 docoValPrim :: M.QN -> [Value] -> Maybe (Type, Type)
 docoValPrim ctor params = case T.unpack $ M.showQN ctor of
@@ -207,7 +207,7 @@ maybeType t = compileTypeValue stdenv TypeVal { typeCtor = M.readQN $ T.pack "Ma
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type
 compileType env t =
   case t of
-    Object (M.Named tv _) -> compileTypeValue env tv
+    Object tv -> compileTypeValue env tv
 
     Unit -> Right LA.VoidType
 
