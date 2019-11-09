@@ -256,6 +256,18 @@ compilePrimTypes env tv = case T.unpack $ M.showQN (typeCtor tv) of
                 , LA.elementTypes = ts
                 }
         
+  "Data.Binary.Int" ->
+    let [ValNat nBits] = typeParams tv in
+      Right $ LA.IntegerType $ fromIntegral (nBits+1)
+  
+  "Data.Binary.Nat" ->
+    let [ValNat nBits] = typeParams tv in
+      Right $ LA.IntegerType $ fromIntegral nBits
+  
+  "Data.FloatingPoint.Double" ->
+    let [] = typeParams tv in
+      Right $ LA.FloatingPointType $ LA.DoubleFP
+
   _ -> Left UnsupportedPrimType
 
 data TypeCompilationError =
