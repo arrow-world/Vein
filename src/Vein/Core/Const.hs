@@ -242,7 +242,14 @@ compilePrimTypes env tv = case T.unpack $ M.showQN (typeCtor tv) of
         byteBits = 8
         
     return $ LA.IntegerType $ fromIntegral $ sz * byteBits
-
+  
+  "Data.Pair" -> do
+    let [Val a xs, Val b ys] = typeParams tv
+    ts <- mapM (compileTypeValue env) [TypeVal a xs, TypeVal b ys]
+    return $  LA.StructureType
+                { LA.isPacked = False
+                , LA.elementTypes = ts
+                }
         
   _ -> Left UnsupportedPrimType
 
