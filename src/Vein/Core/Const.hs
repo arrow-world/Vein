@@ -195,13 +195,18 @@ flattenOb (Object x) = [x]
 flattenOb Unit = []
 flattenOb (ProductO x y) = flattenOb x ++ flattenOb y
 
+
 stdenv :: Env
 stdenv = Map.empty
 
-maybeType :: Value -> Either TypeCompilationError LA.Type
-maybeType t = compileTypeValue stdenv TypeVal { typeCtor = M.readQN $ T.pack "Maybe"
-                                              , typeParams = [t]
-                                              }
+compileTypeCtor :: M.QN -> [Value] -> Either TypeCompilationError LA.Type
+compileTypeCtor ctor params = compileTypeValue stdenv $ TypeVal ctor params
+
+typeAsVal :: TypeValue -> Value
+typeAsVal (TypeVal a xs) = Val a xs
+
+compileMaybeType :: TypeValue -> Either TypeCompilationError LA.Type
+compileMaybeType t = compileTypeCtor (M.readQN $ T.pack "Maybe") [typeAsVal t]
 
 
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type
