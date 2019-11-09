@@ -164,21 +164,25 @@ instance Arrow m a => Arrow (Symmetric m a) a where
   doco (Symmetric f) = doco f
 
 
-data Traced m =
-    Traced m
-  | Trace m
-    deriving (Eq, Functor, Show)
+data Traced m a =
+    Traced (Morphism (Traced m a) a)
+  | Trace (Morphism (Traced m a) a)
+    deriving (Eq, Show)
 
-type TracedMorphism m a = Morphism (Traced m) a
+type TracedMorphism m a = Morphism (Traced m a) a
 
 docoTraced :: Applicative f =>
-  (m -> f (Object a, Object a)) -> Traced m -> f (Object a, Object a)
+  (m -> f (Object a, Object a)) -> Traced m a -> f (Object a, Object a)
 docoTraced doco' f = case f of
-  Traced g -> doco' g
-  Trace g  -> doco'' <$> doco' g
+  Traced g -> docoTracedMorphism doco' g
+  Trace g  -> doco'' <$> docoTracedMorphism doco' g
     where doco'' (ProductO dom _, ProductO cod _) = (dom, cod)
 
-instance Arrow m a => Arrow (Traced m) a where
+docoTracedMorphism :: Applicative f =>
+  (m -> f (Object a, Object a)) -> TracedMorphism m a -> f (Object a, Object a)
+docoTracedMorphism doco' = docoA (docoTraced doco')
+
+instance Arrow m a => Arrow (Traced m a) a where
   doco f = case f of
     Traced g -> doco g
     Trace g  -> (dom, cod)

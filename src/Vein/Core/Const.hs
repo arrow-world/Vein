@@ -12,10 +12,11 @@ import qualified Vein.Core.Monoidal.Monoidal as Monoidal
 import Vein.Core.Monoidal.Monoidal ( (><)
                                    , Object (Object, Unit, ProductO)
                                    , Morphism
-                                   , Traced
+                                   , Traced (Trace, Traced)
+                                   , TracedMorphism
                                    , codA
                                    , docoA
-                                   , docoTraced
+                                   , docoTracedMorphism
                                    , Morphism (Id
                                               , Compose
                                               , ProductM
@@ -45,9 +46,11 @@ import Data.Word (Word32)
 import Numeric.Natural (Natural)
 import Control.Arrow (left)
 import Control.Monad.State (MonadFix)
+import Control.Monad.Reader (Reader)
 import LLVM.AST.Instruction ( Named ((:=)) )
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
 import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr, block, freshUnName)
+import LLVM.IRBuilder.Module ( MonadModuleBuilder, ParameterName (NoParameterName), function )
 import LLVM.IRBuilder.Instruction (add, sub, mul, sdiv, br, condBr, icmp, phi)
 import LLVM.AST.Constant ( Constant (Int), integerBits, integerValue
                          , sizeof, unsignedIntegerValue
@@ -70,12 +73,12 @@ data TypeValue =
 
 type TypeBase = TypeValue
 
-type Function = Morphism (Traced FunctionBase) TypeBase
+type Function = TracedMorphism FunctionBase TypeBase
 type Type = Object TypeBase
 
 
 docoFn :: Env -> Function -> Maybe (Type, Type)
-docoFn env f = docoA (docoTraced doco') f
+docoFn env f = docoTracedMorphism doco' f
   where doco' v = docoVal env v
 
 
@@ -122,26 +125,17 @@ data Definition =
 
 type Env = M.ModuleMap Definition
 
-compileFunc :: Env -> M.Named Function -> StateT UnNameId (Either Error) LA.Definition
+
+compileFunc :: MonadModuleBuilder m => Env -> M.Named Function -> Either Error (m Operand)
 compileFunc env (M.Named f name) = do
-  (dom, cod) <- lift $ maybe (Left DoCoFnError) Right $ docoFn env f
-  paramType <- lift $ left TypeCompilationError $ compileType env dom
-  retType <- lift $ left TypeCompilationError $ compileType env cod
+  (dom, cod) <- maybe (Left DoCoFnError) Right $ docoFn env f
+  paramType <- left TypeCompilationError $ compileType env dom
+  retType <- left TypeCompilationError $ compileType env cod
 
-  fname <- hoist $ toLLVMName name
-  argname <- hoist $ genUnName
-  
-  lift $ Right $ LA.GlobalDefinition LA.functionDefaults
-      { LAG.name = fname
-      , LAG.parameters = ( [ LAG.Parameter paramType argname [] ] , False )
-      , LAG.returnType = retType
-      , LAG.basicBlocks =
-          [
-          ]
-      }
+  let Just name' = toLLVMName name
 
-  where
-    hoist = state . runState
+  return $  function name' (fmap (,NoParameterName) [paramType]) retType
+              undefined
 
 compileFuncPrim :: (MonadFix m, MonadIRBuilder m) => M.QN -> [Value] -> [Operand] -> m Operand
 compileFuncPrim f params ops = case T.unpack $ M.showQN f of
@@ -172,6 +166,12 @@ data Error =
   deriving (Eq, Show)
 
 
+assignTraced :: Env -> (m -> [a] -> [a]) -> Traced m o -> [a] -> [a]
+assignTraced env f m xs =
+  case m of
+    Traced m' -> assign (assignTraced env f) m' xs
+    Trace m' -> undefined
+
 assign :: (m -> [a] -> [a]) -> Morphism m o -> [a] -> [a]
 assign f m xs =
   case m of
@@ -194,19 +194,6 @@ flattenOb :: Object a -> [a]
 flattenOb (Object x) = [x]
 flattenOb Unit = []
 flattenOb (ProductO x y) = flattenOb x ++ flattenOb y
-
-
-stdenv :: Env
-stdenv = Map.empty
-
-compileTypeCtor :: M.QN -> [Value] -> Either TypeCompilationError LA.Type
-compileTypeCtor ctor params = compileTypeValue stdenv $ TypeVal ctor params
-
-typeAsVal :: TypeValue -> Value
-typeAsVal (TypeVal a xs) = Val a xs
-
-compileMaybeType :: TypeValue -> Either TypeCompilationError LA.Type
-compileMaybeType t = compileTypeCtor (M.readQN $ T.pack "Maybe") [typeAsVal t]
 
 
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type
@@ -243,10 +230,16 @@ compilePrimTypes env tv = case T.unpack $ M.showQN (typeCtor tv) of
 
     ts <- mapM (compileTypeValue env) [TypeVal a xs, TypeVal b ys]
 
-    let sz = maximum $ fmap (unsignedIntegerValue . sizeof) ts
+    let szBody = maximum $ fmap (unsignedIntegerValue . sizeof) ts
         byteBits = 8
         
-    return $ LA.IntegerType $ fromIntegral $ sz * byteBits
+    return $  LA.StructureType
+                { LA.isPacked = False
+                , LA.elementTypes =
+                    [ LA.IntegerType 1
+                    , LA.IntegerType $ fromIntegral $ szBody * byteBits
+                    ]
+                }
   
   "Data.Pair" -> do
     let [Val a xs, Val b ys] = typeParams tv
@@ -276,21 +269,9 @@ data TypeCompilationError =
   deriving (Eq, Show)
 
 
-type UnNameId = Word
-
-toLLVMName :: M.Name -> State UnNameId LAN.Name
+toLLVMName :: M.Name -> Maybe LAN.Name
 toLLVMName (M.Name name) =
   if (all isAscii $ T.unpack name) && (not $ name == T.empty) then
-    pure $ LAN.Name $ fromString $ T.unpack name
+    Just $ LAN.Name $ fromString $ T.unpack name
   else
-    genUnName
-
-toLLVMNameM :: Maybe M.Name -> State UnNameId LAN.Name
-toLLVMNameM (Just name) = toLLVMName name
-toLLVMNameM Nothing = genUnName
-
-genUnName :: State UnNameId LAN.Name
-genUnName = do 
-  n <- get
-  modify (+1)
-  return $ LAN.UnName n
+    Nothing
