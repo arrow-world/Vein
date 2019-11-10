@@ -46,7 +46,7 @@ import Data.Word (Word32)
 import Numeric.Natural (Natural)
 import Control.Arrow (left)
 import Control.Monad.State (MonadFix)
-import Control.Monad.Reader (Reader)
+import Control.Monad.Reader (Reader, ask)
 import LLVM.AST.Instruction ( Named ((:=)) )
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
 import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr, block, freshUnName)
@@ -126,8 +126,8 @@ data Definition =
 type Env = M.ModuleMap Definition
 
 
-compileFunc :: MonadModuleBuilder m => Env -> M.Named Function -> Either Error (m Operand)
-compileFunc env (M.Named f name) = do
+compileFuncToDef :: MonadModuleBuilder m => Env -> M.Named Function -> Either Error (m Operand)
+compileFuncToDef env (M.Named f name) = do
   (dom, cod) <- maybe (Left DoCoFnError) Right $ docoFn env f
   paramType <- left TypeCompilationError $ compileType env dom
   retType <- left TypeCompilationError $ compileType env cod
@@ -137,13 +137,37 @@ compileFunc env (M.Named f name) = do
   return $  function name' (fmap (,NoParameterName) [paramType]) retType
               undefined
 
-compileFuncPrim :: (MonadFix m, MonadIRBuilder m) => M.QN -> [Value] -> [Operand] -> m Operand
-compileFuncPrim f params ops = case T.unpack $ M.showQN f of
-  "Data.Binary.Int.add" -> add a b where [a,b] = ops
-  "Data.Binary.Int.sub" -> sub a b where [a,b] = ops
-  "Data.Binary.Int.mul" -> mul a b where [a,b] = ops
-  "Data.Binary.Int.div" ->
+compileFunc ::  (MonadFix m, MonadIRBuilder m) =>
+                  Function -> Reader Env (Either Error ([Operand] -> m Operand))
+compileFunc f = do
+  env <- ask
+  -- assignTracedMorphism env compileValue f
+  undefined
+
+compileValue :: (MonadFix m, MonadIRBuilder m) =>
+                  Value -> Reader Env (Either Error ([Operand] -> m Operand))
+compileValue v = case v of
+  Val ctor params -> do
+    env <- ask
+    case Map.lookup ctor env of
+      Just def -> case def of
+        DefType x -> return $ Left UnexpectedType
+        DefFunc fn -> compileFunc fn
+      
+      Nothing ->  return $
+                    (maybe (Left UndefinedValue) Right $ compileFuncPrim ctor)
+                      <*> (pure params)
+
+compileFuncPrim ::  (MonadFix m, MonadIRBuilder m) =>
+                      M.QN -> Maybe ([Value] -> [Operand] -> m Operand)
+compileFuncPrim f = case T.unpack $ M.showQN f of
+  "Data.Binary.Int.add" -> Just $ \ [] [a,b] -> add a b
+  "Data.Binary.Int.sub" -> Just $ \ [] [a,b] -> sub a b
+  "Data.Binary.Int.mul" -> Just $ \ [] [a,b] -> mul a b
+  "Data.Binary.Int.div" -> Just $ \ [] [a,b] ->
     mdo
+      let LA.IntegerType nBits = typeOf a
+
       isZero <- icmp IntegerPredicate.EQ b $ ConstantOperand (Int nBits 0)
       condBr isZero ifThen ifElse
 
@@ -156,15 +180,17 @@ compileFuncPrim f params ops = case T.unpack $ M.showQN f of
 
       ifExit <- block
       phi [(tVal, ifThen), (fVal, ifElse)]
-    where
-      [a,b] = ops
-      LA.IntegerType nBits = typeOf a
+  _ -> Nothing
 
 data Error =
     TypeCompilationError TypeCompilationError
   | DoCoFnError
+  | UnexpectedType
+  | UndefinedValue
   deriving (Eq, Show)
 
+assignTracedMorphism :: Env -> (m -> [a] -> [a]) -> TracedMorphism m o -> [a] -> [a]
+assignTracedMorphism env f = assign (assignTraced env f)
 
 assignTraced :: Env -> (m -> [a] -> [a]) -> Traced m o -> [a] -> [a]
 assignTraced env f m xs =
@@ -215,7 +241,7 @@ compileTypeValue env tv =
   case Map.lookup (typeCtor tv) env of
     Just def -> case def of
       DefType x -> compileType env x
-      DefFunc fn -> lookupPrimTy
+      DefFunc fn -> Left UnexpectedFunc
 
     Nothing -> lookupPrimTy
   where
@@ -266,6 +292,7 @@ compilePrimTypes env tv = case T.unpack $ M.showQN (typeCtor tv) of
 data TypeCompilationError =
     UndefinedType
   | UnsupportedPrimType
+  | UnexpectedFunc
   deriving (Eq, Show)
 
 
