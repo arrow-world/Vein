@@ -46,16 +46,17 @@ import Data.Word (Word32)
 import Numeric.Natural (Natural)
 import Control.Arrow (left)
 import Control.Monad.State (MonadFix)
-import Control.Monad.Reader (Reader, ask)
+import Control.Monad.Reader (Reader, ask, runReader)
 import LLVM.AST.Instruction ( Named ((:=)) )
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
 import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr, block, freshUnName)
 import LLVM.IRBuilder.Module ( MonadModuleBuilder, ParameterName (NoParameterName), function )
 import LLVM.IRBuilder.Instruction (add, sub, mul, sdiv, br, condBr, icmp, phi)
-import LLVM.AST.Constant ( Constant (Int), integerBits, integerValue
+import LLVM.AST.Constant ( Constant (Int, Float), integerBits, integerValue
                          , sizeof, unsignedIntegerValue
                          )
 import LLVM.AST.Typed ( Typed (typeOf) )
+import LLVM.AST.Float ( SomeFloat (Single, Double) )
 
 data Value =
     Val { valCtor :: M.QN , valParams :: [Value] }
@@ -139,24 +140,32 @@ compileFuncToDef env (M.Named f name) = do
 
 compileFunc ::  (MonadFix m, MonadIRBuilder m) =>
                   Function -> Reader Env (Either Error ([Operand] -> m Operand))
-compileFunc f = do
-  env <- ask
-  -- assignTracedMorphism env compileValue f
-  undefined
+compileFunc f =
+  do
+    env <- ask
+    -- assignTracedMorphism ((runReader env) . compileValue) f
+    undefined
 
 compileValue :: (MonadFix m, MonadIRBuilder m) =>
                   Value -> Reader Env (Either Error ([Operand] -> m Operand))
-compileValue v = case v of
-  Val ctor params -> do
-    env <- ask
-    case Map.lookup ctor env of
-      Just def -> case def of
-        DefType x -> return $ Left UnexpectedType
-        DefFunc fn -> compileFunc fn
-      
-      Nothing ->  return $
-                    (maybe (Left UndefinedValue) Right $ compileFuncPrim ctor)
-                      <*> (pure params)
+compileValue v =
+  case v of
+    Val ctor params -> do
+      env <- ask
+      case Map.lookup ctor env of
+        Just def -> case def of
+          DefType x -> return $ Left UnexpectedType
+          DefFunc fn -> compileFunc fn
+        
+        Nothing ->  return $
+                      (maybe (Left UndefinedValue) Right $ compileFuncPrim ctor)
+                        <*> (pure params)
+    
+    ValBinInt n nBits -> constant $ return $ ConstantOperand $ Int nBits n
+    ValFP32 x -> constant $ return $ ConstantOperand $ Float (Single x)
+    ValFP64 x -> constant $ return $ ConstantOperand $ Float (Double x)
+  where
+    constant x = return $ Right $ \[] -> x
 
 compileFuncPrim ::  (MonadFix m, MonadIRBuilder m) =>
                       M.QN -> Maybe ([Value] -> [Operand] -> m Operand)
@@ -189,13 +198,13 @@ data Error =
   | UndefinedValue
   deriving (Eq, Show)
 
-assignTracedMorphism :: Env -> (m -> [a] -> [a]) -> TracedMorphism m o -> [a] -> [a]
-assignTracedMorphism env f = assign (assignTraced env f)
+assignTracedMorphism :: (m -> [a] -> [a]) -> TracedMorphism m o -> [a] -> [a]
+assignTracedMorphism f = assign (assignTraced f)
 
-assignTraced :: Env -> (m -> [a] -> [a]) -> Traced m o -> [a] -> [a]
-assignTraced env f m xs =
+assignTraced :: (m -> [a] -> [a]) -> Traced m o -> [a] -> [a]
+assignTraced f m xs =
   case m of
-    Traced m' -> assign (assignTraced env f) m' xs
+    Traced m' -> assign (assignTraced f) m' xs
     Trace m' -> undefined
 
 assign :: (m -> [a] -> [a]) -> Morphism m o -> [a] -> [a]
