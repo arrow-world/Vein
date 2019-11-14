@@ -2,6 +2,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ApplicativeDo #-}
 
 module Vein.Core.Const where
 
@@ -14,8 +15,10 @@ import Vein.Core.Monoidal.Monoidal ( (><)
                                    , Morphism
                                    , Traced (Trace, Traced)
                                    , TracedMorphism
+                                   , domA
                                    , codA
                                    , docoA
+                                   , docoTraced
                                    , docoTracedMorphism
                                    , Morphism (Id
                                               , Compose
@@ -44,12 +47,15 @@ import Data.Char (isAscii)
 import Data.String (fromString)
 import Data.Word (Word32)
 import Numeric.Natural (Natural)
-import Control.Arrow (left)
+import Control.Arrow (left, (***))
+import Data.Functor.Identity (Identity (Identity), runIdentity)
+import Control.Monad ( (>=>) )
 import Control.Monad.State (MonadFix)
-import Control.Monad.Reader (Reader, ask, runReader)
+import Control.Monad.Reader (Reader, ask, runReader, ReaderT)
+import Control.Monad.Except (ExceptT)
 import LLVM.AST.Instruction ( Named ((:=)) )
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
-import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr, block, freshUnName)
+import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr, block, freshUnName, IRBuilderT)
 import LLVM.IRBuilder.Module ( MonadModuleBuilder, ParameterName (NoParameterName), function )
 import LLVM.IRBuilder.Instruction (add, sub, mul, sdiv, br, condBr, icmp, phi)
 import LLVM.AST.Constant ( Constant (Int, Float), integerBits, integerValue
@@ -143,8 +149,15 @@ compileFunc ::  (MonadFix m, MonadIRBuilder m) =>
 compileFunc f =
   do
     env <- ask
-    -- assignTracedMorphism ((runReader env) . compileValue) f
-    undefined
+    let run r = runReader r env
+    let docoVal' = (maybe (Left DoCoFnError) Right) . (docoVal env)
+
+    return $ assignTracedMorphism (singleton . run . compileValue) docoVal' f
+
+  where
+    singleton ::  Either Error ([Operand] -> m Operand) ->
+                    Either Error ([Operand] -> m [Operand])
+    singleton = fmap $ \g -> (fmap pure) . g
 
 compileValue :: (MonadFix m, MonadIRBuilder m) =>
                   Value -> Reader Env (Either Error ([Operand] -> m Operand))
@@ -198,28 +211,61 @@ data Error =
   | UndefinedValue
   deriving (Eq, Show)
 
-assignTracedMorphism :: (m -> [a] -> [a]) -> TracedMorphism m o -> [a] -> [a]
-assignTracedMorphism f = assign (assignTraced f)
+assignTracedMorphism :: (Applicative f, Monad g) =>
+                              (m -> f ([a] -> g [a]))
+                          ->  (m -> f (Object o, Object o))
+                          ->  TracedMorphism m o
+                          ->  f ([a] -> g [a])
+assignTracedMorphism f doco =
+  assign (assignTraced f doco) (docoTraced doco)
 
-assignTraced :: (m -> [a] -> [a]) -> Traced m o -> [a] -> [a]
-assignTraced f m xs =
+assignTraced :: (Applicative f, Monad g) =>
+                      (m -> f ([a] -> g [a]))
+                  ->  (m -> f (Object o, Object o))
+                  ->  Traced m o
+                  ->  f ([a] -> g [a])
+assignTraced f doco m =
   case m of
-    Traced m' -> assign (assignTraced f) m' xs
+    Traced m' -> assign (assignTraced f doco) (docoTraced doco) m'
     Trace m' -> undefined
 
-assign :: (m -> [a] -> [a]) -> Morphism m o -> [a] -> [a]
-assign f m xs =
+assign :: (Applicative f, Monad g) =>
+                (m -> f ([a] -> g [a]))
+            ->  (m -> f (Object o, Object o))
+            ->  Morphism m o
+            ->  f ([a] -> g [a])
+assign f doco m =
   case m of
-    Compose m1 m2 -> assign f m2 $ assign f m1 xs
-    ProductM m1 m2 -> assign f m1 xs ++ assign f m2 xs
-    Morphism m' -> f m' xs
-    Id _ -> xs
-    UnitorL x -> xs
-    UnitorR x -> xs
-    UnunitorL _ -> xs
-    UnunitorR _ -> xs
-    Assoc _ _ _ -> xs
-    Unassoc _ _ _ -> xs
+    Compose m1 m2 ->
+      do
+        m1' <- assign' m1
+        m2' <- assign' m2
+        pure $ m1' >=> m2'
+
+    ProductM m1 m2 ->
+      do
+        m1' <- assign' m1
+        m2' <- assign' m2
+        nofInputs_m1 <- nofInputs m1
+        let splitInputs = splitAt nofInputs_m1
+
+        return $ \xs -> 
+          let (ys,zs) = splitInputs xs in
+            (++) <$> m1' ys <*> m2' zs
+      where
+        nofInputs m' = lenOfOb <$> domA doco m'
+
+    Morphism m' -> f m'
+    Id _ -> id'
+    UnitorL x -> id'
+    UnitorR x -> id'
+    UnunitorL _ -> id'
+    UnunitorR _ -> id'
+    Assoc _ _ _ -> id'
+    Unassoc _ _ _ -> id'
+  where
+    id' = pure $ return
+    assign' = assign f doco
 
 lenOfOb :: Object a -> Int
 lenOfOb (ProductO x y) = lenOfOb x + lenOfOb y
