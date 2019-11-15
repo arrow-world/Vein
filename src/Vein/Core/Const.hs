@@ -53,12 +53,15 @@ import Control.Monad ( (>=>) )
 import Control.Monad.State (MonadFix)
 import Control.Monad.Reader (Reader, ask, runReader, ReaderT)
 import Control.Monad.Except (ExceptT)
+import Data.Foldable ( foldrM )
 import LLVM.AST.Instruction ( Named ((:=)) )
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
 import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr, block, freshUnName, IRBuilderT)
 import LLVM.IRBuilder.Module ( MonadModuleBuilder, ParameterName (NoParameterName), function )
-import LLVM.IRBuilder.Instruction (add, sub, mul, sdiv, br, condBr, icmp, phi)
-import LLVM.AST.Constant ( Constant (Int, Float), integerBits, integerValue
+import LLVM.IRBuilder.Instruction ( add, sub, mul, sdiv, br, condBr, icmp, phi
+                                  , insertValue
+                                  )
+import LLVM.AST.Constant ( Constant (Int, Float, Undef), integerBits, integerValue
                          , sizeof, unsignedIntegerValue
                          )
 import LLVM.AST.Typed ( Typed (typeOf) )
@@ -152,12 +155,25 @@ compileFunc f =
     let run r = runReader r env
     let docoVal' = (maybe (Left DoCoFnError) Right) . (docoVal env)
 
-    return $ assignTracedMorphism (singleton . run . compileValue) docoVal' f
+    let f' = assignTracedMorphism (singleton . run . compileValue) docoVal' f
+
+    return $ (.) <$> pure (aggregateOps []) <*> f'
 
   where
-    singleton ::  Either Error ([Operand] -> m Operand) ->
-                    Either Error ([Operand] -> m [Operand])
+    singleton ::  (MonadFix m, MonadIRBuilder m) =>
+                    Either Error ([Operand] -> m Operand) ->
+                      Either Error ([Operand] -> m [Operand])
     singleton = fmap $ \g -> (fmap pure) . g
+
+    aggregateOps :: MonadIRBuilder m => [LA.Type] -> m [Operand] -> m Operand
+    aggregateOps types ops = do
+      ops' <- ops
+
+      foldrM
+        ( \(op,i) agg -> insertValue agg op [i] )
+        ( ConstantOperand $ Undef structType )
+        ( zip ops' $ fmap fromIntegral [0..(length ops')] )
+      where structType = LA.StructureType False types
 
 compileValue :: (MonadFix m, MonadIRBuilder m) =>
                   Value -> Reader Env (Either Error ([Operand] -> m Operand))
@@ -211,7 +227,7 @@ data Error =
   | UndefinedValue
   deriving (Eq, Show)
 
-assignTracedMorphism :: (Applicative f, Monad g) =>
+assignTracedMorphism :: (Monad f, Monad g) =>
                               (m -> f ([a] -> g [a]))
                           ->  (m -> f (Object o, Object o))
                           ->  TracedMorphism m o
@@ -219,7 +235,7 @@ assignTracedMorphism :: (Applicative f, Monad g) =>
 assignTracedMorphism f doco =
   assign (assignTraced f doco) (docoTraced doco)
 
-assignTraced :: (Applicative f, Monad g) =>
+assignTraced :: (Monad f, Monad g) =>
                       (m -> f ([a] -> g [a]))
                   ->  (m -> f (Object o, Object o))
                   ->  Traced m o
@@ -229,7 +245,7 @@ assignTraced f doco m =
     Traced m' -> assign (assignTraced f doco) (docoTraced doco) m'
     Trace m' -> undefined
 
-assign :: (Applicative f, Monad g) =>
+assign :: (Monad f, Monad g) =>
                 (m -> f ([a] -> g [a]))
             ->  (m -> f (Object o, Object o))
             ->  Morphism m o
