@@ -3,6 +3,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ApplicativeDo #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Vein.Core.Const where
 
@@ -12,6 +13,7 @@ import qualified Vein.Core.Component as Component
 import qualified Vein.Core.Monoidal.Monoidal as Monoidal
 import Vein.Core.Monoidal.Monoidal ( (><)
                                    , Object (Object, Unit, ProductO)
+                                   , WithInternalHom (..)
                                    , Morphism
                                    , Traced (Trace, Traced)
                                    , TracedMorphism
@@ -81,7 +83,7 @@ data TypeValue =
     TypeVal { typeCtor :: M.QN , typeParams :: [Value] }
   deriving (Eq, Show)
 
-type TypeBase = TypeValue
+type TypeBase = WithInternalHom TypeValue
 
 type Function = TracedMorphism FunctionBase TypeBase
 type Type = Object TypeBase
@@ -121,7 +123,7 @@ docoVal env v =
         TypeVal { typeCtor = M.readQN (T.pack "Data.Natural.Nat") , typeParams = [] }
 
   where
-    docoConst x = (Unit , Object x)
+    docoConst x = (Unit , Object $ WithInternalHom x)
 
 docoValPrim :: M.QN -> [Value] -> Maybe (Type, Type)
 docoValPrim ctor params = case T.unpack $ M.showQN ctor of
@@ -227,7 +229,7 @@ data Error =
   | UndefinedValue
   deriving (Eq, Show)
 
-assignTracedMorphism :: (Monad f, Monad g) =>
+assignTracedMorphism :: (Monad f, MonadIRBuilder g) =>
                               (m -> f ([a] -> g [a]))
                           ->  (m -> f (Object o, Object o))
                           ->  TracedMorphism m o
@@ -235,15 +237,32 @@ assignTracedMorphism :: (Monad f, Monad g) =>
 assignTracedMorphism f doco =
   assign (assignTraced f doco) (docoTraced doco)
 
-assignTraced :: (Monad f, Monad g) =>
+assignTraced :: (Monad f, MonadIRBuilder g) =>
                       (m -> f ([a] -> g [a]))
                   ->  (m -> f (Object o, Object o))
                   ->  Traced m o
                   ->  f ([a] -> g [a])
 assignTraced f doco m =
   case m of
-    Traced m' -> assign (assignTraced f doco) (docoTraced doco) m'
-    Trace m' -> undefined
+    Traced m' -> assignTracedMorphism' m'
+
+    {-
+     -  trace :: ((a,c) -> (b,c)) -> a -> b
+     -  trace f x = fst $ f x $ fix $ snd . ( f (x,) )
+     -    where fix g = g (fix g)
+     -
+     -  trace f = \x -> fst $ f x $ trace $ \(n,g) -> ( g n , (snd . ( f (x,) )) g )
+     -}
+    {-
+    Trace m' -> do
+      m'' <- assignTracedMorphism' m'
+
+      return $ \[x] -> do
+
+        m'' [x]
+    -}
+  where
+    assignTracedMorphism' = assignTracedMorphism f doco
 
 assign :: (Monad f, Monad g) =>
                 (m -> f ([a] -> g [a]))
@@ -256,7 +275,7 @@ assign f doco m =
       do
         m1' <- assign' m1
         m2' <- assign' m2
-        pure $ m1' >=> m2'
+        return $ m1' >=> m2'
 
     ProductM m1 m2 ->
       do
@@ -280,7 +299,7 @@ assign f doco m =
     Assoc _ _ _ -> id'
     Unassoc _ _ _ -> id'
   where
-    id' = pure $ return
+    id' = return $ return
     assign' = assign f doco
 
 lenOfOb :: Object a -> Int
@@ -296,16 +315,23 @@ flattenOb (ProductO x y) = flattenOb x ++ flattenOb y
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type
 compileType env t =
   case t of
-    Object tv -> compileTypeValue env tv
+    Object t' -> case t' of
+      WithInternalHom tv -> compileTypeValue env tv
+      Hom x y ->  LA.FunctionType
+                    <$> compileType' y
+                    <*> (pure <$> compileType' x)
+                    <*> (pure False)
 
     Unit -> Right LA.VoidType
 
     ProductO x y -> do
-      elementTypes <- mapM (compileType env) [x,y]
+      elementTypes <- mapM compileType' [x,y]
       return $ LA.StructureType
         { LA.isPacked = False
         , LA.elementTypes = elementTypes
         }
+  where
+    compileType' = compileType env
 
 compileTypeValue :: Env -> TypeValue -> Either TypeCompilationError LA.Type
 compileTypeValue env tv =
