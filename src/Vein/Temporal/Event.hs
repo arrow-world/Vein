@@ -68,17 +68,17 @@ import qualified Data.Text as T
  - 例えば、TimeメスコネクタとAudio.Sinkオスコネクタを持つコンポネントはコンパイルできる。
  - 例
  -
- - CosPlay : Component (-Signal.Time >< Signal.System.Audio.Sink)
+ - CosPlay : Component (-Temporal.Time >< Temporal.System.Audio.Sink)
  - CosPlay t s = s << toAudioSink $ map cos (2*Math.pi*440*t)
  -}
 
 compiler = Compile.Compiler
   { Compile.compiler = compiler'
   , Compile.require = fmap (M.readQN . T.pack)
-      [ "Signal.Event"
-      , "Signal.Event.mealy"
-      , "Signal.Event.merge"
-      , "Signal.Event.route"
+      [ "Temporal.Event"
+      , "Temporal.Event.mealy"
+      , "Temporal.Event.merge"
+      , "Temporal.Event.route"
       ]
   }
 
