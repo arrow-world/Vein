@@ -17,11 +17,17 @@ import Vein.Core.Monoidal.Monoidal ( (><)
                                    , Morphism
                                    , Traced (Trace, Traced)
                                    , TracedMorphism
+                                   , Braided (..)
+                                   , CartesianClosed (..)
+                                   , Cartesian (..)
+                                   , CartesianClosedMorphism
                                    , domA
                                    , codA
                                    , docoA
+                                   , doco
                                    , docoTraced
                                    , docoTracedMorphism
+                                   , docoLift
                                    , Morphism (Id
                                               , Compose
                                               , ProductM
@@ -77,20 +83,18 @@ data Value =
   | ValNat Natural
   deriving (Eq, Show)
 
-type FunctionBase = Value
-
 data TypeValue =
     TypeVal { typeCtor :: M.QN , typeParams :: [Value] }
   deriving (Eq, Show)
 
 type TypeBase = WithInternalHom TypeValue
 
-type Function = TracedMorphism FunctionBase TypeBase
+type Function = CartesianClosedMorphism (Cartesian Value TypeBase) TypeValue
 type Type = Object TypeBase
 
 
 docoFn :: Env -> Function -> Maybe (Type, Type)
-docoFn env f = docoTracedMorphism doco' f
+docoFn env f = doco (docoLift doco') f
   where doco' v = docoVal env v
 
 
@@ -157,7 +161,7 @@ compileFunc f =
     let run r = runReader r env
     let docoVal' = (maybe (Left DoCoFnError) Right) . (docoVal env)
 
-    let f' = assignTracedMorphism (singleton . run . compileValue) docoVal' f
+    let f' = assign (singleton . run . compileValue) docoVal' f
 
     return $ (.) <$> pure (aggregateOps []) <*> f'
 
@@ -229,47 +233,42 @@ data Error =
   | UndefinedValue
   deriving (Eq, Show)
 
-assignTracedMorphism :: (Monad f, MonadIRBuilder g) =>
-                              (m -> f ([a] -> g [a]))
-                          ->  (m -> f (Object o, Object o))
-                          ->  TracedMorphism m o
-                          ->  f ([a] -> g [a])
-assignTracedMorphism f doco =
-  assign (assignTraced f doco) (docoTraced doco)
-
-assignTraced :: (Monad f, MonadIRBuilder g) =>
-                      (m -> f ([a] -> g [a]))
-                  ->  (m -> f (Object o, Object o))
-                  ->  Traced m o
-                  ->  f ([a] -> g [a])
-assignTraced f doco m =
-  case m of
-    Traced m' -> assignTracedMorphism' m'
-
-    {-
-     -  trace :: ((a,c) -> (b,c)) -> a -> b
-     -  trace f x = fst $ f x $ fix $ snd . ( f (x,) )
-     -    where fix g = g (fix g)
-     -
-     -  trace f = \x -> fst $ f x $ trace $ \(n,g) -> ( g n , (snd . ( f (x,) )) g )
-     -}
-    {-
-    Trace m' -> do
-      m'' <- assignTracedMorphism' m'
-
-      return $ \[x] -> do
-
-        m'' [x]
-    -}
-  where
-    assignTracedMorphism' = assignTracedMorphism f doco
-
-assign :: (Monad f, Monad g) =>
-                (m -> f ([a] -> g [a]))
-            ->  (m -> f (Object o, Object o))
-            ->  Morphism m o
+assign :: (Monad f, MonadIRBuilder g) =>
+                (Value -> f ([a] -> g [a]))
+            ->  (Value -> f (Type, Type))
+            ->  Function
             ->  f ([a] -> g [a])
-assign f doco m =
+assign f doco' =
+  assignMorphism
+    (assignCartesianClosed (assignCartesian f doco') $ doco doco')
+      (doco $ doco doco')
+
+assignCartesian ::  (Monad f, MonadIRBuilder g) =>
+                          (m -> f ([a] -> g [a]))
+                      ->  (m -> f (Object o, Object o))
+                      ->  Cartesian m o
+                      ->  f ([a] -> g [a])
+assignCartesian f doco m =
+  case m of
+    Cartesian m' -> f m'
+    Diag _ -> return $ \[x] -> return [x,x]
+    Aug _ -> return $ \[x] -> return []
+
+assignCartesianClosed ::  (Monad f, MonadIRBuilder g) =>
+                              (m -> f ([a] -> g [a]))
+                          ->  (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
+                          ->  CartesianClosed m o
+                          ->  f ([a] -> g [a])
+assignCartesianClosed f doco m =
+  case m of
+    CartesianClosed m' -> f m'
+
+assignMorphism :: (Monad f, Monad g) =>
+                        (m -> f ([a] -> g [a]))
+                    ->  (m -> f (Object o, Object o))
+                    ->  Morphism m o
+                    ->  f ([a] -> g [a])
+assignMorphism f doco m =
   case m of
     Compose m1 m2 ->
       do
@@ -300,7 +299,8 @@ assign f doco m =
     Unassoc _ _ _ -> id'
   where
     id' = return $ return
-    assign' = assign f doco
+    assign' = assignMorphism f doco
+
 
 lenOfOb :: Object a -> Int
 lenOfOb (ProductO x y) = lenOfOb x + lenOfOb y
