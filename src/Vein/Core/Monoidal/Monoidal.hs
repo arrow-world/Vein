@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Vein.Core.Monoidal.Monoidal where
@@ -31,15 +32,13 @@ data WithInternalHom a =
 type ObjectWithInternalHom a = Object (WithInternalHom a)
 
 
-class Arrow a b | a -> b where
-  domain :: a -> Object b
-  domain = fst . doco
+class IMorphism m m' o | m -> m' o where
+  doco :: Applicative f =>
+            (m' -> f (Object o, Object o)) -> m -> f (Object o, Object o)
 
-  codomain :: a -> Object b
-  codomain = snd . doco
-
-  doco :: a -> (Object b, Object b)
-  doco f = (domain f, codomain f)
+docoLift :: (Applicative f, IMorphism m m' o, IMorphism m' m'' o) =>
+              (m'' -> f (Object o, Object o)) -> m -> f (Object o, Object o)
+docoLift doco' = doco (doco doco')
 
 
 data Morphism m a =
@@ -55,6 +54,8 @@ data Morphism m a =
   | Morphism m
     deriving (Eq, Functor, Show)
 
+instance IMorphism (Morphism m o) m o where
+  doco = docoA
 
 docoA :: Applicative f =>
   (m -> f (Object a, Object a)) -> Morphism m a -> f (Object a, Object a)
@@ -83,32 +84,6 @@ codA :: Applicative f => (m -> f (Object a, Object a)) -> Morphism m a -> f (Obj
 codA doco' f = snd <$> docoA doco' f
 
 
-instance Arrow m a => Arrow (Morphism m a) a where
-  domain f = case f of
-    Id x          -> x
-    Compose g h   -> domain g
-    ProductM g h  -> domain g >< domain h
-    UnitorL x     -> Unit >< x
-    UnitorR x     -> x >< Unit
-    UnunitorL x   -> x
-    UnunitorR x   -> x
-    Assoc x y z   -> (x >< y) >< z
-    Unassoc x y z -> x >< (y >< z)
-    Morphism g    -> domain g
-
-  codomain f = case f of
-    Id x          -> x
-    Compose g h   -> codomain h
-    ProductM g h  -> codomain g >< codomain h
-    UnitorL x     -> x
-    UnitorR x     -> x
-    UnunitorL x   -> Unit >< x
-    UnunitorR x   -> x >< Unit
-    Assoc x y z   -> x >< (y >< z)
-    Unassoc x y z -> (x >< y) >< z
-    Morphism g    -> codomain g
-
-
 data Braided m a =
     Braided m
   | Braid (Object a) (Object a)
@@ -116,14 +91,11 @@ data Braided m a =
 
 type BraidedMorphism m a = Morphism (Braided m a) a
 
-instance Arrow m a => Arrow (Braided m a) a where
-  domain f = case f of
-    Braided g -> domain g
-    Braid x y -> x >< y
-
-  codomain f = case f of
-    Braided g -> domain g
-    Braid x y -> y >< x
+instance IMorphism (Braided m o) m o where
+  doco doco' m =
+    case m of
+      Braided g -> doco' g
+      Braid x y -> pure (x >< y, y >< x)
 
 
 data Cartesian m a =
@@ -134,24 +106,26 @@ data Cartesian m a =
 
 type CartesianMorphism m a = Morphism (Cartesian m a) a
 
-instance Arrow m a => Arrow (Cartesian m a) a where
-  doco f = case f of
-    Cartesian g -> doco g
-    Diag x      -> (x, x >< x)
-    Aug x       -> (x, Unit)
+instance IMorphism (Cartesian m o) m o where
+  doco doco' m =
+    case m of
+      Cartesian g -> doco' g
+      Diag x -> pure (x, x >< x)
+      Aug x -> pure (x, Unit)
 
 
 data CartesianClosed m a =
     CartesianClosed m
   | Eval (Object (WithInternalHom a)) (Object (WithInternalHom a))
-    deriving (Eq, Functor, Show)
+    deriving (Eq, Show)
 
 type CartesianClosedMorphism m a = Morphism (CartesianClosed m a) (WithInternalHom a)
 
-instance Arrow m (WithInternalHom a) => Arrow (CartesianClosed m a) (WithInternalHom a) where
-  doco f = case f of
-    CartesianClosed g -> doco g
-    Eval x y          -> ((Object $ Hom x y) >< x, y)
+instance IMorphism (CartesianClosed m o) m (WithInternalHom o) where
+  doco doco' m =
+    case m of
+      CartesianClosed g -> doco' g
+      Eval x y          -> pure ((Object $ Hom x y) >< x, y)
 
 
 data Symmetric m a =
@@ -160,8 +134,8 @@ data Symmetric m a =
 
 type SymmetricMorphism m a = Morphism (Symmetric m a) a
 
-instance Arrow m a => Arrow (Symmetric m a) a where
-  doco (Symmetric f) = doco f
+instance IMorphism (Symmetric m o) m o where
+  doco doco' (Symmetric m) = doco' m
 
 
 data Traced m a =
@@ -169,7 +143,19 @@ data Traced m a =
   | Trace (Morphism (Traced m a) a)
     deriving (Eq, Show)
 
+trace :: Eq o => Morphism (Traced m o) o -> Maybe (Traced m o)
+trace m = do
+  doco' <- doco (const Nothing) m 
+  case doco' of
+    (ProductO _ dom, ProductO _ cod)
+      | dom == cod -> Just $ Trace m
+      | otherwise  -> Nothing
+    otherwise -> Nothing
+
 type TracedMorphism m a = Morphism (Traced m a) a
+
+instance IMorphism (Traced m o) m o where
+  doco = docoTraced
 
 docoTraced :: Applicative f =>
   (m -> f (Object a, Object a)) -> Traced m a -> f (Object a, Object a)
@@ -181,11 +167,3 @@ docoTraced doco' f = case f of
 docoTracedMorphism :: Applicative f =>
   (m -> f (Object a, Object a)) -> TracedMorphism m a -> f (Object a, Object a)
 docoTracedMorphism doco' = docoA (docoTraced doco')
-
-instance Arrow m a => Arrow (Traced m a) a where
-  doco f = case f of
-    Traced g -> doco g
-    Trace g  -> (dom, cod)
-      where
-        ProductO dom _ = domain g
-        ProductO cod _ = codomain g

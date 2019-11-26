@@ -24,8 +24,9 @@ data DualityM m a =
 
 type Morphism m a = Monoidal.Morphism (DualityM m a) (DualityO a)
 
-instance Monoidal.Arrow m (DualityO a) => Monoidal.Arrow (DualityM m a) (DualityO a) where
-  doco f = case f of
-    DualityM g -> Monoidal.doco g
-    Ev x       -> (x >< (Monoidal.Object $ Dual x), Monoidal.Unit)
-    Cv x       -> (Monoidal.Unit, x >< (Monoidal.Object $ Dual x))
+instance Monoidal.IMorphism (DualityM m o) m (DualityO o) where
+  doco doco' m =
+    case m of
+      DualityM g -> doco' g
+      Ev x       -> pure (x >< (Monoidal.Object $ Dual x), Monoidal.Unit)
+      Cv x       -> pure (Monoidal.Unit, x >< (Monoidal.Object $ Dual x))
