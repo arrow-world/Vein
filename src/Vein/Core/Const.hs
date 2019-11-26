@@ -67,7 +67,7 @@ import LLVM.AST.Operand ( Operand (ConstantOperand) )
 import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr, block, freshUnName, IRBuilderT)
 import LLVM.IRBuilder.Module ( MonadModuleBuilder, ParameterName (NoParameterName), function )
 import LLVM.IRBuilder.Instruction ( add, sub, mul, sdiv, br, condBr, icmp, phi
-                                  , insertValue
+                                  , insertValue, ret
                                   )
 import LLVM.AST.Constant ( Constant (Int, Float, Undef), integerBits, integerValue
                          , sizeof, unsignedIntegerValue
@@ -142,7 +142,8 @@ data Definition =
 type Env = M.ModuleMap Definition
 
 
-compileFuncToDef :: MonadModuleBuilder m => Env -> M.Named Function -> Either Error (m Operand)
+compileFuncToDef :: (MonadFix m, MonadModuleBuilder m) =>
+                      Env -> M.Named Function -> Either Error (m Operand)
 compileFuncToDef env (M.Named f name) = do
   (dom, cod) <- maybe (Left DoCoFnError) Right $ docoFn env f
   paramType <- left TypeCompilationError $ compileType env dom
@@ -150,8 +151,10 @@ compileFuncToDef env (M.Named f name) = do
 
   let Just name' = toLLVMName name
 
-  return $  function name' (fmap (,NoParameterName) [paramType]) retType
-              undefined
+  function name' (fmap (,NoParameterName) [paramType]) retType <$>
+    do
+      f' <- runReader (compileFunc f) env
+      return $ f' >=> ret
 
 compileFunc ::  (MonadFix m, MonadIRBuilder m) =>
                   Function -> Reader Env (Either Error ([Operand] -> m Operand))
