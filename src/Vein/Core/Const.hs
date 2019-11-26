@@ -40,7 +40,6 @@ import Vein.Core.Monoidal.Monoidal ( (><)
                                               , Morphism
                                               )
                                    )
-import Vein.Core.Cherry (Cherry (Fruit, Branch), CherryM)
 
 import qualified LLVM.AST as LA
 import qualified LLVM.AST.Global as LAG
