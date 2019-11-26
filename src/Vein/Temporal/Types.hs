@@ -1,4 +1,4 @@
-module Vein.Signal.Types where
+module Vein.Temporal.Types where
 
 import qualified Vein.Core.Lambda.Types as LT
 import qualified Vein.Core.Module as M
@@ -12,11 +12,11 @@ tBehavior = LT.NewType { LT.paramTypes = [LT.Univ 0] }
 tEvent = LT.NewType { LT.paramTypes = [LT.Univ 0] }
 
 tBandlimitedAnalog =
-  LT.NewType { LT.paramTypes = [LT.Type $ M.readQN $ T.pack "Signal.Analog.Frequency"] }
+  LT.NewType { LT.paramTypes = [LT.Type $ M.readQN $ T.pack "Temporal.Analog.Frequency"] }
 
 mod =
   Map.fromList $ map (\(s,t) -> (M.readQN $ T.pack s, t))
-    [ ("Signal.Behavior", tBehavior)
-    , ("Signal.Event", tEvent)
-    , ("Signal.Analog.Bandlimited", tBandlimitedAnalog)
+    [ ("Temporal.Behavior", tBehavior)
+    , ("Temporal.Event", tEvent)
+    , ("Temporal.Analog.Bandlimited", tBandlimitedAnalog)
     ]

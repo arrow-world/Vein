@@ -1,4 +1,4 @@
-module Vein.Signal.Event where
+module Vein.Temporal.Event where
 
 import qualified Vein.Core.Component as Component
 import qualified Vein.Core.Compile as Compile
