@@ -136,7 +136,7 @@ docoValPrim ctor params = case T.unpack $ M.showQN ctor of
 
 data Definition =
     DefFunc Function
-  | DefType Type
+  | DefTypeAlias Type
   deriving (Eq, Show)
 
 type Env = M.ModuleMap Definition
@@ -192,7 +192,7 @@ compileValue v =
       env <- ask
       case Map.lookup ctor env of
         Just def -> case def of
-          DefType x -> return $ Left UnexpectedType
+          DefTypeAlias x -> return $ Left UnexpectedType
           DefFunc fn -> compileFunc fn
         
         Nothing ->  return $
@@ -340,7 +340,7 @@ compileTypeValue :: Env -> TypeValue -> Either TypeCompilationError LA.Type
 compileTypeValue env tv =
   case Map.lookup (typeCtor tv) env of
     Just def -> case def of
-      DefType x -> compileType env x
+      DefTypeAlias x -> compileType env x
       DefFunc fn -> Left UnexpectedFunc
 
     Nothing -> lookupPrimTy
