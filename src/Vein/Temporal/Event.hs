@@ -1,10 +1,22 @@
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RecursiveDo #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+
 module Vein.Temporal.Event where
 
-import qualified Vein.Core.Component as Component
 import qualified Vein.Core.Compile as Compile
 import qualified Vein.Core.Module as M
+import qualified Vein.Core.Const as C
+import Vein.Core.Component (Component, Env)
+import Vein.Core.Monoidal.Monoidal (doco, Object (Unit))
 
-import qualified LLVM.AST as LLVM_AST
+import qualified LLVM.AST as LA
+import LLVM.AST.Operand ( Operand (ConstantOperand) )
+import LLVM.IRBuilder.Monad ( MonadIRBuilder , block )
+import LLVM.IRBuilder.Instruction ( br, condBr )
+import Control.Monad.State ( MonadFix )
+import Data.Foldable ( foldrM )
+import Control.Monad.Reader (Reader, asks, runReader, ReaderT)
 import qualified Data.Text as T
 
 {-
@@ -72,15 +84,71 @@ import qualified Data.Text as T
  - CosPlay t s = s << toAudioSink $ map cos (2*Math.pi*440*t)
  -}
 
-compiler = Compile.Compiler
-  { Compile.compiler = compiler'
-  , Compile.require = fmap (M.readQN . T.pack)
-      [ "Temporal.Event"
-      , "Temporal.Event.mealy"
-      , "Temporal.Event.merge"
-      , "Temporal.Event.route"
-      ]
-  }
+require = fmap (M.readQN . T.pack)
+  [ "Temporal.Event"
+  , "Temporal.Event.mealy"
+  , "Temporal.Event.merge"
+  , "Temporal.Event.route"
+  ]
 
-compiler' :: Component.Env -> Component.Component -> Either Compile.PassError LLVM_AST.Module
-compiler' = undefined
+data PortProc m =
+  PortProc  { onRecv :: [m Operand]
+            , onSend :: [[Operand] -> m Operand]
+            }
+
+data CortexProc m =
+  CortexProc { portProcs :: [PortProc m] }
+
+
+data Cortex = Cortex Component
+cortex :: Component -> Maybe Cortex
+cortex c =
+  if (snd <$> doco (const Nothing) c) == pure Unit then
+    Just $ Cortex c
+  else
+    Nothing
+
+
+compileCortex :: (MonadIRBuilder m) => Cortex -> CortexProc m
+compileCortex c = undefined
+
+
+data DelayedMealy = DM { initState :: C.Value , trans :: C.Function }
+
+compileDM ::  (MonadFix m, MonadIRBuilder m) =>
+                DelayedMealy -> Reader Env (Either CompileError ([Operand] -> m Operand))
+compileDM DM{initState, trans} = asks $ \env -> undefined
+
+
+data Source m = Source { poll :: m Operand }
+data Sink m = Sink { push :: [Operand] -> m () }
+
+type Sources m = M.ModuleMap (Source m)
+type Sinks m = M.ModuleMap (Sink m)
+type SSs m = (Sources m, Sinks m)
+
+eventLoop :: (MonadIRBuilder m, MonadFix m) => [Source m] -> [Sink m] -> Component -> m ()
+eventLoop ins outs com = do
+  loop <- block
+
+  sequence $
+    fmap
+      ( \Source{poll} ->
+        (
+          mdo
+            e <- poll
+            condBr (C.isJust e) ifThen ifElse
+
+            ifThen <- block
+            e' <- C.unwrap e
+
+            ifElse <- block
+
+            return ()
+        )
+      )
+      ins
+
+  br loop
+
+data CompileError

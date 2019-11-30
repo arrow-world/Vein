@@ -68,7 +68,7 @@ import LLVM.IRBuilder.Module ( MonadModuleBuilder, ParameterName (NoParameterNam
 import LLVM.IRBuilder.Instruction ( add, sub, mul, sdiv, br, condBr, icmp, phi
                                   , insertValue, ret
                                   )
-import LLVM.AST.Constant ( Constant (Int, Float, Undef), integerBits, integerValue
+import LLVM.AST.Constant ( Constant (Int, Float, Undef, InsertValue), integerBits, integerValue
                          , sizeof, unsignedIntegerValue
                          )
 import LLVM.AST.Typed ( Typed (typeOf) )
@@ -218,15 +218,23 @@ compileFuncPrim f = case T.unpack $ M.showQN f of
       condBr isZero ifThen ifElse
 
       ifThen <- block
-      tVal <- sdiv a b
+      tVal <- sdiv a b >>= just
       br ifExit
 
       ifElse <- block
-      fVal <- sdiv a b
+      let fVal = ConstantOperand $ nothing undefined
 
       ifExit <- block
       phi [(tVal, ifThen), (fVal, ifElse)]
   _ -> Nothing
+
+just x = undefined
+nothing a = ctor 0 (maybeTy a) 1
+maybeTy a = undefined
+isJust x = undefined
+unwrap x = undefined
+
+ctor n ty nBitsOfTag = InsertValue (Undef ty) (Int nBitsOfTag n) [0]
 
 data Error =
     TypeCompilationError TypeCompilationError
