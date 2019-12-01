@@ -40,6 +40,7 @@ import Vein.Core.Monoidal.Monoidal ( (><)
                                               , Morphism
                                               )
                                    )
+import Vein.Core.Monoidal.Monad (assignCartesian, assignCartesianClosed, assignMorphism)
 
 import qualified LLVM.AST as LA
 import qualified LLVM.AST.Global as LAG
@@ -243,6 +244,7 @@ data Error =
   | UndefinedValue
   deriving (Eq, Show)
 
+
 assign :: (Monad f, Monad g) =>
                 (Value -> f ([a] -> g [a]))
             ->  (Value -> f (Type, Type))
@@ -252,74 +254,6 @@ assign f doco' =
   assignMorphism
     (assignCartesianClosed (assignCartesian f doco') $ doco doco')
       (doco $ doco doco')
-
-assignCartesian ::  (Monad f, Monad g) =>
-                          (m -> f ([a] -> g [a]))
-                      ->  (m -> f (Object o, Object o))
-                      ->  Cartesian m o
-                      ->  f ([a] -> g [a])
-assignCartesian f doco m =
-  case m of
-    Cartesian m' -> f m'
-    Diag _ -> return $ \[x] -> return [x,x]
-    Aug _ -> return $ \[x] -> return []
-
-assignCartesianClosed ::  (Monad f, Monad g) =>
-                              (m -> f ([a] -> g [a]))
-                          ->  (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
-                          ->  CartesianClosed m o
-                          ->  f ([a] -> g [a])
-assignCartesianClosed f doco m =
-  case m of
-    CartesianClosed m' -> f m'
-
-assignMorphism :: (Monad f, Monad g) =>
-                        (m -> f ([a] -> g [a]))
-                    ->  (m -> f (Object o, Object o))
-                    ->  Morphism m o
-                    ->  f ([a] -> g [a])
-assignMorphism f doco m =
-  case m of
-    Compose m1 m2 ->
-      do
-        m1' <- assign' m1
-        m2' <- assign' m2
-        return $ m1' >=> m2'
-
-    ProductM m1 m2 ->
-      do
-        m1' <- assign' m1
-        m2' <- assign' m2
-        nofInputs_m1 <- nofInputs m1
-        let splitInputs = splitAt nofInputs_m1
-
-        return $ \xs -> 
-          let (ys,zs) = splitInputs xs in
-            (++) <$> m1' ys <*> m2' zs
-      where
-        nofInputs m' = lenOfOb <$> domA doco m'
-
-    Morphism m' -> f m'
-    Id _ -> id'
-    UnitorL x -> id'
-    UnitorR x -> id'
-    UnunitorL _ -> id'
-    UnunitorR _ -> id'
-    Assoc _ _ _ -> id'
-    Unassoc _ _ _ -> id'
-  where
-    id' = return $ return
-    assign' = assignMorphism f doco
-
-
-lenOfOb :: Object a -> Int
-lenOfOb (ProductO x y) = lenOfOb x + lenOfOb y
-lenOfOb _ = 1
-
-flattenOb :: Object a -> [a]
-flattenOb (Object x) = [x]
-flattenOb Unit = []
-flattenOb (ProductO x y) = flattenOb x ++ flattenOb y
 
 
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type

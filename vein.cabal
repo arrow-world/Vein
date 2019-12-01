@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3d1c0d3ab9389d202b05cb3ebc328a0f96b8a762be6df727eca3a941058ab5e2
+-- hash: 8f0202d86ff72f68f462640774c28654128e8e50e85a5d17d9003f789e940f5f
 
 name:           vein
 version:        0.1.0.0
@@ -36,6 +36,7 @@ library
       Vein.Core.Module
       Vein.Core.Monoidal.CompactClosed
       Vein.Core.Monoidal.Module
+      Vein.Core.Monoidal.Monad
       Vein.Core.Monoidal.Monoidal
       Vein.Temporal.Event
       Vein.Temporal.Types
