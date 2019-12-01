@@ -243,7 +243,7 @@ data Error =
   | UndefinedValue
   deriving (Eq, Show)
 
-assign :: (Monad f, MonadIRBuilder g) =>
+assign :: (Monad f, Monad g) =>
                 (Value -> f ([a] -> g [a]))
             ->  (Value -> f (Type, Type))
             ->  Function
@@ -253,7 +253,7 @@ assign f doco' =
     (assignCartesianClosed (assignCartesian f doco') $ doco doco')
       (doco $ doco doco')
 
-assignCartesian ::  (Monad f, MonadIRBuilder g) =>
+assignCartesian ::  (Monad f, Monad g) =>
                           (m -> f ([a] -> g [a]))
                       ->  (m -> f (Object o, Object o))
                       ->  Cartesian m o
@@ -264,7 +264,7 @@ assignCartesian f doco m =
     Diag _ -> return $ \[x] -> return [x,x]
     Aug _ -> return $ \[x] -> return []
 
-assignCartesianClosed ::  (Monad f, MonadIRBuilder g) =>
+assignCartesianClosed ::  (Monad f, Monad g) =>
                               (m -> f ([a] -> g [a]))
                           ->  (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
                           ->  CartesianClosed m o
