@@ -139,7 +139,7 @@ instance IMorphism (Symmetric m o) m o where
 
 
 data Traced m a =
-    Traced (Morphism (Traced m a) a)
+    Traced m
   | Trace (Morphism (Traced m a) a)
     deriving (Eq, Show)
 
@@ -160,7 +160,7 @@ instance IMorphism (Traced m o) m o where
 docoTraced :: Applicative f =>
   (m -> f (Object a, Object a)) -> Traced m a -> f (Object a, Object a)
 docoTraced doco' f = case f of
-  Traced g -> docoTracedMorphism doco' g
+  Traced g -> doco' g
   Trace g  -> doco'' <$> docoTracedMorphism doco' g
     where doco'' (ProductO dom _, ProductO cod _) = (dom, cod)
 

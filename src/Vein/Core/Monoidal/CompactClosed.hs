@@ -20,7 +20,7 @@ data DualityM m a =
     DualityM m
   | Ev (Object a)
   | Cv (Object a)
-    deriving (Eq, Functor, Show)
+    deriving (Eq, Show)
 
 type Morphism m a = Monoidal.Morphism (DualityM m a) (DualityO a)
 
