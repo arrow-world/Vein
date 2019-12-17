@@ -32,19 +32,10 @@ data WithInternalHom a =
 type ObjectWithInternalHom a = Object (WithInternalHom a)
 
 
-class IMorphism m m' o | m -> m' o where
-  doco :: Applicative f =>
-            (m' -> f (Object o, Object o)) -> m -> f (Object o, Object o)
-
-docoLift :: (Applicative f, IMorphism m m' o, IMorphism m' m'' o) =>
-              (m'' -> f (Object o, Object o)) -> m -> f (Object o, Object o)
-docoLift doco' = doco (doco doco')
-
-
-data Morphism m a =
+data MorphismF m a r =
     Id (Object a)
-  | Compose (Morphism m a) (Morphism m a)
-  | ProductM (Morphism m a) (Morphism m a)
+  | Compose r r
+  | ProductM r r
   | UnitorL (Object a)
   | UnitorR (Object a)
   | UnunitorL (Object a)
@@ -54,116 +45,98 @@ data Morphism m a =
   | Morphism m
     deriving (Eq, Functor, Show)
 
-instance IMorphism (Morphism m o) m o where
-  doco = docoA
-
-docoA :: Applicative f =>
-  (m -> f (Object a, Object a)) -> Morphism m a -> f (Object a, Object a)
-docoA doco' f =
+docoMorphismF ::  Monad f =>
+                        (m -> f (Object a, Object a))
+                    ->  (r -> f (Object a, Object a))
+                    ->  MorphismF m a r
+                    ->  f (Object a, Object a)
+docoMorphismF docoM docoR f =
   case f of
     Id x          -> pure (x, x)
-    Compose g h   -> (,) <$> dom g <*> dom h
-    ProductM g h  -> (,) <$> d <*> c
-      where d = (><) <$> dom g <*> dom h
-            c = (><) <$> cod g <*> cod h
+    Compose g h   ->
+      do
+        (dom , _) <- docoR g
+        (_ , cod) <- docoR h
+        pure (dom , cod)
+    ProductM g h  ->
+      do
+        (a  , b ) <- docoR g
+        (a' , b') <- docoR h
+        pure (a >< a' , b >< b')
     UnitorL x     -> pure (Unit >< x, x)
     UnitorR x     -> pure (x >< Unit, x)
     UnunitorL x   -> pure (x, Unit >< x)
     UnunitorR x   -> pure (x, x >< Unit)
     Assoc x y z   -> pure ((x >< y) >< z, x >< (y >< z))
     Unassoc x y z -> pure (x >< (y >< z), (x >< y) >< z)
-    Morphism g    -> doco' g
-  where
-    dom = domA doco'
-    cod = codA doco'
-
-domA :: Applicative f => (m -> f (Object a, Object a)) -> Morphism m a -> f (Object a)
-domA doco' f = fst <$> docoA doco' f
-
-codA :: Applicative f => (m -> f (Object a, Object a)) -> Morphism m a -> f (Object a)
-codA doco' f = snd <$> docoA doco' f
+    Morphism g    -> docoM g
 
 
-data Braided m a =
+data Braided m o =
     Braided m
-  | Braid (Object a) (Object a)
+  | Braid (Object o) (Object o)
     deriving (Eq, Functor, Show)
 
-type BraidedMorphism m a = Morphism (Braided m a) a
+docoBraided ::  Applicative f =>
+                      (m -> f (Object o, Object o))
+                  ->  Braided m o
+                  ->  f (Object o, Object o)
+docoBraided docoM f =
+  case f of
+    Braided g -> docoM g
+    Braid x y -> pure (x >< y , y >< x)
 
-instance IMorphism (Braided m o) m o where
-  doco doco' m =
-    case m of
-      Braided g -> doco' g
-      Braid x y -> pure (x >< y, y >< x)
 
-
-data Cartesian m a =
+data Cartesian m o =
     Cartesian m
-  | Diag (Object a)
-  | Aug (Object a)
+  | Diag (Object o)
+  | Aug (Object o)
     deriving (Eq, Functor, Show)
 
-type CartesianMorphism m a = Morphism (Cartesian m a) a
+docoCartesian ::  Applicative f =>
+                      (m -> f (Object o, Object o))
+                  ->  Cartesian m o
+                  ->  f (Object o, Object o)
+docoCartesian docoM f =
+  case f of
+    Cartesian g -> docoM g
+    Diag x      -> pure (x, x >< x)
+    Aug x       -> pure (x, Unit)
 
-instance IMorphism (Cartesian m o) m o where
-  doco doco' m =
-    case m of
-      Cartesian g -> doco' g
-      Diag x -> pure (x, x >< x)
-      Aug x -> pure (x, Unit)
 
-
-data CartesianClosed m a =
+data CartesianClosed m o =
     CartesianClosed m
-  | Eval (Object (WithInternalHom a)) (Object (WithInternalHom a))
+  | Eval (Object (WithInternalHom o)) (Object (WithInternalHom o))
     deriving (Eq, Show)
 
-type CartesianClosedMorphism m a = Morphism (CartesianClosed m a) (WithInternalHom a)
-
-instance IMorphism (CartesianClosed m o) m (WithInternalHom o) where
-  doco doco' m =
-    case m of
-      CartesianClosed g -> doco' g
-      Eval x y          -> pure ((Object $ Hom x y) >< x, y)
-
-
-data Symmetric m a =
-    Symmetric m
-    deriving (Eq, Functor)
-
-type SymmetricMorphism m a = Morphism (Symmetric m a) a
-
-instance IMorphism (Symmetric m o) m o where
-  doco doco' (Symmetric m) = doco' m
+docoCartesianClosed ::  Applicative f =>
+                            (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
+                        ->  CartesianClosed m o
+                        ->  f (Object (WithInternalHom o), Object (WithInternalHom o))
+docoCartesianClosed docoM f =
+  case f of
+    CartesianClosed g -> docoM g
+    Eval x y          -> pure ((Object $ Hom x y) >< x, y)
 
 
-data Traced m a =
+data Traced m o =
     Traced m
-  | Trace (Morphism (Traced m a) a)
+  | Trace m
     deriving (Eq, Show)
 
-trace :: Eq o => Morphism (Traced m o) o -> Maybe (Traced m o)
-trace m = do
-  doco' <- doco (const Nothing) m 
-  case doco' of
-    (ProductO _ dom, ProductO _ cod)
-      | dom == cod -> Just $ Trace m
-      | otherwise  -> Nothing
-    otherwise -> Nothing
+type TracedMorphismF m o r = MorphismF m o (Traced r o)
 
-type TracedMorphism m a = Morphism (Traced m a) a
-
-instance IMorphism (Traced m o) m o where
-  doco = docoTraced
-
-docoTraced :: Applicative f =>
-  (m -> f (Object a, Object a)) -> Traced m a -> f (Object a, Object a)
-docoTraced doco' f = case f of
-  Traced g -> doco' g
-  Trace g  -> doco'' <$> docoTracedMorphism doco' g
-    where doco'' (ProductO dom _, ProductO cod _) = (dom, cod)
-
-docoTracedMorphism :: Applicative f =>
-  (m -> f (Object a, Object a)) -> TracedMorphism m a -> f (Object a, Object a)
-docoTracedMorphism doco' = docoA (docoTraced doco')
+docoTracedMorphismF ::  Monad f =>
+                              (m -> f (Object o, Object o))
+                          ->  (r -> f (Object o, Object o))
+                          ->  TracedMorphismF m o r
+                          ->  f (Object o, Object o)
+docoTracedMorphismF docoM docoR f = docoMorphismF docoM docoR' f
+  where
+    -- docoR' :: Traced r o -> f (Object o, Object o)
+    docoR' f = case f of
+      Traced g -> docoR g
+      Trace g  -> do
+        doco <- docoR g
+        let (ProductO dom _, ProductO cod _) = doco
+        pure (dom , cod)
