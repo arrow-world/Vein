@@ -16,17 +16,19 @@ data DualityO a =
 type Object a = Monoidal.Object (DualityO a)
 
 
-data DualityM m a =
+data DualityM m o =
     DualityM m
-  | Ev (Object a)
-  | Cv (Object a)
+  | Ev (Object o)
+  | Cv (Object o)
     deriving (Eq, Show)
 
-type Morphism m a = Monoidal.Morphism (DualityM m a) (DualityO a)
 
-instance Monoidal.IMorphism (DualityM m o) m (DualityO o) where
-  doco doco' m =
-    case m of
-      DualityM g -> doco' g
-      Ev x       -> pure (x >< (Monoidal.Object $ Dual x), Monoidal.Unit)
-      Cv x       -> pure (Monoidal.Unit, x >< (Monoidal.Object $ Dual x))
+docoDualityM :: Applicative f =>
+                      (m -> f (Object o, Object o))
+                  ->  DualityM m o
+                  ->  f (Object o, Object o)
+docoDualityM docoM f =
+  case f of
+    DualityM g -> docoM g
+    Ev x       -> pure (x >< (Monoidal.Object $ Dual x), Monoidal.Unit)
+    Cv x       -> pure (Monoidal.Unit, x >< (Monoidal.Object $ Dual x))
