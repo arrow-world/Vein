@@ -1,7 +1,6 @@
 module Vein.Core.Module where
 
 import qualified Data.Text as T
-import Numeric.Natural (Natural)
 import qualified Data.Map.Lazy as Map
 
 data Name = Name T.Text

@@ -8,60 +8,34 @@
 module Vein.Core.Const where
 
 import qualified Vein.Core.Module as M
-import qualified Vein.Core.Monoidal.Monoidal as Monoidal
-import Vein.Core.Monoidal.Monoidal ( (><)
-                                   , Object (Object, Unit, ProductO)
+import Vein.Core.Monoidal.Monoidal ( Object (Object, Unit, ProductO)
                                    , WithInternalHom (..)
-                                   , Traced (Trace, Traced)
-                                   , TracedMorphism
-                                   , Braided (..)
-                                   , CartesianClosed (..)
-                                   , Cartesian (..)
                                    , CartesianClosedBraidedCartesianMorphism
                                    , docoCartesianClosedBraidedCartesianMorphism
-                                   , docoTracedMorphism
-                                   , MorphismF  ( Id
-                                                , Compose
-                                                , ProductM
-                                                , UnitorL
-                                                , UnitorR
-                                                , UnunitorL
-                                                , UnunitorR
-                                                , Assoc
-                                                , Unassoc
-                                                , Morphism
-                                                )
                                    )
-import Vein.Core.Monoidal.Monad (assignCartesian, assignCartesianClosed, assignCartesianClosedBraidedCartesianMorphism)
+import Vein.Core.Monoidal.Monad (assignCartesianClosedBraidedCartesianMorphism)
 
 import qualified LLVM.AST as LA
-import qualified LLVM.AST.Global as LAG
 import qualified LLVM.AST.Name as LAN
-import qualified LLVM.AST.Instruction as LAI
 import qualified LLVM.AST.IntegerPredicate as IntegerPredicate
 import qualified Data.Text as T
 import qualified Data.Map.Lazy as Map
-import qualified Data.Default as Default
-import Control.Monad.State (State, get, modify, StateT, lift, state, runState)
 import Data.Char (isAscii)
 import Data.String (fromString)
 import Data.Word (Word32)
 import Numeric.Natural (Natural)
-import Control.Arrow (left, (***))
-import Data.Functor.Identity (Identity (Identity), runIdentity)
+import Control.Arrow (left)
 import Control.Monad ( (>=>) )
 import Control.Monad.State (MonadFix)
-import Control.Monad.Reader (Reader, ask, runReader, ReaderT)
-import Control.Monad.Except (ExceptT)
 import Data.Foldable ( foldrM )
-import LLVM.AST.Instruction ( Named ((:=)) )
+import Control.Monad.Reader (Reader, ask, runReader)
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
-import LLVM.IRBuilder.Monad (MonadIRBuilder, emitInstr, block, freshUnName, IRBuilderT)
+import LLVM.IRBuilder.Monad (MonadIRBuilder, block)
 import LLVM.IRBuilder.Module ( MonadModuleBuilder, ParameterName (NoParameterName), function )
 import LLVM.IRBuilder.Instruction ( add, sub, mul, sdiv, br, condBr, icmp, phi
                                   , insertValue, ret
                                   )
-import LLVM.AST.Constant ( Constant (Int, Float, Undef, InsertValue), integerBits, integerValue
+import LLVM.AST.Constant ( Constant (Int, Float, Undef, InsertValue)
                          , sizeof, unsignedIntegerValue
                          )
 import LLVM.AST.Typed ( Typed (typeOf) )

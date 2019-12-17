@@ -1,14 +1,10 @@
 module Vein.Core.Monoidal.Monad where
 
-import Vein.Core.Monoidal.Monoidal ( (><)
-                                   , Object (Object, Unit, ProductO)
+import Vein.Core.Monoidal.Monoidal ( Object (Object, Unit, ProductO)
                                    , WithInternalHom (..)
-                                   , Traced (Trace, Traced)
-                                   , TracedMorphism
                                    , Braided (..)
                                    , CartesianClosed (..)
                                    , Cartesian (..)
-                                   , docoTracedMorphism
                                    , docoBraided
                                    , docoCartesian
                                    , CartesianClosedBraidedCartesianMorphism

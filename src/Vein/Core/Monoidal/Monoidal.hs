@@ -11,7 +11,6 @@
 
 module Vein.Core.Monoidal.Monoidal where
 
-import Data.Text (Text)
 import Data.Fix
 
 
