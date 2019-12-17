@@ -122,21 +122,34 @@ docoCartesianClosed docoM f =
 data Traced m o =
     Traced m
   | Trace m
-    deriving (Eq, Show)
+    deriving (Eq, Show, Functor)
 
-type TracedMorphismF m o r = MorphismF m o (Traced r o)
+newtype TracedMorphismF m o r = TracedMorphismF (MorphismF m o (Traced r o))
 
 docoTracedMorphismF ::  Monad f =>
                               (m -> f (Object o, Object o))
                           ->  (r -> f (Object o, Object o))
                           ->  TracedMorphismF m o r
                           ->  f (Object o, Object o)
-docoTracedMorphismF docoM docoR f = docoMorphismF docoM docoR' f
-  where
-    -- docoR' :: Traced r o -> f (Object o, Object o)
-    docoR' f = case f of
-      Traced g -> docoR g
-      Trace g  -> do
-        doco <- docoR g
-        let (ProductO dom _, ProductO cod _) = doco
-        pure (dom , cod)
+docoTracedMorphismF docoM docoR (TracedMorphismF f) =
+  docoMorphismF docoM docoR' f
+    where
+      -- docoR' :: Traced r o -> f (Object o, Object o)
+      docoR' f = case f of
+        Traced g -> docoR g
+        Trace g  -> do
+          doco <- docoR g
+          let (ProductO dom _, ProductO cod _) = doco
+          pure (dom , cod)
+
+type TracedMorphism m o = Fix (TracedMorphismF m o)
+
+docoTracedMorphism :: Monad f =>
+                            (m -> f (Object o, Object o))
+                        ->  TracedMorphism m o
+                        ->  f (Object o, Object o)
+docoTracedMorphism docoM (Fix f) =
+  docoTracedMorphismF' docoTracedMorphism' f
+    where
+      docoTracedMorphism' = docoTracedMorphism docoM
+      docoTracedMorphismF' = docoTracedMorphismF docoM
