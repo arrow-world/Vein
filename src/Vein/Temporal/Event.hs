@@ -8,7 +8,8 @@ import qualified Vein.Core.Compile as Compile
 import qualified Vein.Core.Module as M
 import qualified Vein.Core.Const as C
 import Vein.Core.Component (Component, Env)
-import Vein.Core.Monoidal.Monoidal (doco, Object (Unit))
+import Vein.Core.Monoidal.Monoidal (doco, Object (Unit), Morphism (Compose))
+import Vein.Core.Monoidal.CompactClosed (DualityM (DualityM, Ev, Cv))
 
 import qualified LLVM.AST as LA
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
@@ -91,13 +92,13 @@ require = fmap (M.readQN . T.pack)
   , "Temporal.Event.route"
   ]
 
-data PortProc m =
-  PortProc  { onRecv :: [m Operand]
-            , onSend :: [[Operand] -> m Operand]
-            }
+data OnRecv m = OnRecv { procOnRecv :: [Operand] -> m () }
+data OnSend m = OnSend { procOnSend :: [Operand] -> m () }
 
 data CortexProc m =
-  CortexProc { portProcs :: [PortProc m] }
+  CortexProc { portProcs :: [[OnSend m]] -> [[OnRecv m]] }
+
+data ComProc m = ComProc { inProc :: CortexProc m , outProc :: CortexProc m }
 
 
 data Cortex = Cortex Component
@@ -108,9 +109,42 @@ cortex c =
   else
     Nothing
 
+{-
+compileCortex :: (MonadIRBuilder m) => Cortex -> Either CompileError (CortexProc m)
+compileCortex (Cortex c) = do
+  let portProcs' onSends = 
+    where procOnSends = fmap (\(OnSend p) -> p) onSends
+  return $ Cortex portProcs'
+-}
 
-compileCortex :: (MonadIRBuilder m) => Cortex -> CortexProc m
-compileCortex c = undefined
+compileCom :: (MonadIRBuilder m, MonadFix m) =>
+                Component -> Reader Env (Either CompileError (ComProc m))
+compileCom c =
+  do
+    env <- ask
+    let run r = runReader r env
+    let docoE v = (doco v) >=> (maybe (Left DoCoFnError) Right)
+
+    assign ? docoE c
+
+
+compilePrimCom :: (MonadIRBuilder m, MonadFix m) => M.QN -> [C.Value] -> Maybe (ComProc m)
+compilePrimCom name args = Nothing
+
+
+type Type = CC.Object M.QN
+
+
+doco :: C.Value -> Maybe (Type, Type)
+doco = undefined
+
+
+assign :: (Monad f, Monad g) =>
+                (C.Value -> f ([a] -> g [a]))
+            ->  (C.Value -> f (Type, Type))
+            ->  Component
+            ->  f ([a] -> g [a])
+assign = undefined
 
 
 data DelayedMealy = DM { initState :: C.Value , trans :: C.Function }
@@ -151,4 +185,5 @@ eventLoop ins outs com = do
 
   br loop
 
-data CompileError
+data CompileError =
+    DoCoFnError
