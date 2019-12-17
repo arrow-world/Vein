@@ -9,6 +9,12 @@ import Vein.Core.Monoidal.Monoidal ( (><)
                                    , CartesianClosed (..)
                                    , Cartesian (..)
                                    , docoTracedMorphism
+                                   , docoBraided
+                                   , docoCartesian
+                                   , CartesianClosedBraidedCartesianMorphism
+                                   , CartesianClosedBraidedCartesianMorphismF (..)
+                                   , docoCartesianClosedBraidedCartesianMorphism
+                                   , docoCartesianClosedBraidedCartesian
                                    , MorphismF  ( Id
                                                 , Compose
                                                 , ProductM
@@ -22,6 +28,17 @@ import Vein.Core.Monoidal.Monoidal ( (><)
                                                 )
                                    )
 import Control.Monad ( (>=>) )
+import Data.Fix
+
+assignBraided ::  (Monad f, Monad g) =>
+                        (m -> f ([a] -> g [a]))
+                    ->  (m -> f (Object o, Object o))
+                    ->  Braided m o
+                    ->  f ([a] -> g [a])
+assignBraided assignM doco m =
+  case m of
+    Braided m' -> assignM m'
+    Braid _ _ -> return $ \[x,y] -> return [y,x]
 
 assignCartesian ::  (Monad f, Monad g) =>
                           (m -> f ([a] -> g [a]))
@@ -83,6 +100,27 @@ assignMorphismF assignM docoM assignR docoR m =
     Unassoc _ _ _ -> id'
   where
     id' = return $ return
+
+assignCartesianClosedBraidedCartesianMorphism ::  (Monad f, Monad g) =>
+                                                        (m -> f ([a] -> g [a]))
+                                                    ->  (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
+                                                    ->  CartesianClosedBraidedCartesianMorphism m o
+                                                    ->  f ([a] -> g [a])
+assignCartesianClosedBraidedCartesianMorphism assignM docoM (Fix (CartesianClosedBraidedCartesianMorphismF m)) =
+  assignMorphismF assignM docoM
+    (assignCartesianClosed
+      (assignCartesian
+        (assignBraided
+          (assignCartesianClosedBraidedCartesianMorphism assignM docoM)
+          (docoCartesianClosedBraidedCartesianMorphism docoM)
+        )
+        (docoBraided $ docoCartesianClosedBraidedCartesianMorphism docoM)
+      )
+      (docoCartesian $ docoBraided $ docoCartesianClosedBraidedCartesianMorphism docoM)
+    )
+    (docoCartesianClosedBraidedCartesian docoM)
+    m
+
 
 
 lenOfOb :: Object a -> Int

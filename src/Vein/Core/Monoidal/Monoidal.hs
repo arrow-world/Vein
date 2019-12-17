@@ -119,8 +119,29 @@ docoCartesianClosed docoM f =
     Eval x y          -> pure ((Object $ Hom x y) >< x, y)
 
 
-data Traced m o =
-    Traced m
+newtype CartesianClosedBraidedCartesianMorphismF m o r =
+  CartesianClosedBraidedCartesianMorphismF
+    (MorphismF m (WithInternalHom o) (CartesianClosed (Cartesian (Braided r (WithInternalHom o)) (WithInternalHom o)) o))
+  deriving (Eq, Show)
+
+type CartesianClosedBraidedCartesianMorphism m o =
+  Fix (CartesianClosedBraidedCartesianMorphismF m o)
+
+docoCartesianClosedBraidedCartesian docoM = 
+  (docoCartesianClosed $ docoCartesian $ docoBraided $ docoCartesianClosedBraidedCartesianMorphism docoM)
+
+docoCartesianClosedBraidedCartesianMorphism ::  Monad f =>
+                                                      (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
+                                                  ->  CartesianClosedBraidedCartesianMorphism m o
+                                                  ->  f (Object (WithInternalHom o), Object (WithInternalHom o))
+docoCartesianClosedBraidedCartesianMorphism docoM (Fix (CartesianClosedBraidedCartesianMorphismF f)) =
+  docoMorphismF
+    docoM
+    (docoCartesianClosedBraidedCartesian docoM)
+    f
+
+
+data Traced m o = Traced m
   | Trace m
     deriving (Eq, Show, Functor)
 

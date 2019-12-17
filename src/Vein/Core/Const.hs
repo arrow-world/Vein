@@ -7,40 +7,32 @@
 
 module Vein.Core.Const where
 
-import qualified Vein.Core.Compile as Compile
 import qualified Vein.Core.Module as M
-import qualified Vein.Core.Component as Component
 import qualified Vein.Core.Monoidal.Monoidal as Monoidal
 import Vein.Core.Monoidal.Monoidal ( (><)
                                    , Object (Object, Unit, ProductO)
                                    , WithInternalHom (..)
-                                   , Morphism
                                    , Traced (Trace, Traced)
                                    , TracedMorphism
                                    , Braided (..)
                                    , CartesianClosed (..)
                                    , Cartesian (..)
-                                   , CartesianClosedMorphism
-                                   , domA
-                                   , codA
-                                   , docoA
-                                   , doco
-                                   , docoTraced
+                                   , CartesianClosedBraidedCartesianMorphism
+                                   , docoCartesianClosedBraidedCartesianMorphism
                                    , docoTracedMorphism
-                                   , docoLift
-                                   , Morphism (Id
-                                              , Compose
-                                              , ProductM
-                                              , UnitorL
-                                              , UnitorR
-                                              , UnunitorL
-                                              , UnunitorR
-                                              , Assoc
-                                              , Unassoc
-                                              , Morphism
-                                              )
+                                   , MorphismF  ( Id
+                                                , Compose
+                                                , ProductM
+                                                , UnitorL
+                                                , UnitorR
+                                                , UnunitorL
+                                                , UnunitorR
+                                                , Assoc
+                                                , Unassoc
+                                                , Morphism
+                                                )
                                    )
-import Vein.Core.Monoidal.Monad (assignCartesian, assignCartesianClosed, assignMorphism)
+import Vein.Core.Monoidal.Monad (assignCartesian, assignCartesianClosed, assignCartesianClosedBraidedCartesianMorphism)
 
 import qualified LLVM.AST as LA
 import qualified LLVM.AST.Global as LAG
@@ -89,13 +81,13 @@ data TypeValue =
 
 type TypeBase = WithInternalHom TypeValue
 
-type Function = CartesianClosedMorphism (Cartesian Value TypeBase) TypeValue
+type Function = CartesianClosedBraidedCartesianMorphism Value TypeValue
 type Type = Object TypeBase
 
 
 docoFn :: Env -> Function -> Maybe (Type, Type)
-docoFn env f = doco (docoLift doco') f
-  where doco' v = docoVal env v
+docoFn env f = docoCartesianClosedBraidedCartesianMorphism docoM f
+  where docoM v = docoVal env v
 
 
 docoVal :: Env -> Value -> Maybe (Type, Type)
@@ -250,10 +242,8 @@ assign :: (Monad f, Monad g) =>
             ->  (Value -> f (Type, Type))
             ->  Function
             ->  f ([a] -> g [a])
-assign f doco' =
-  assignMorphism
-    (assignCartesianClosed (assignCartesian f doco') $ doco doco')
-      (doco $ doco doco')
+assign assignM docoM =
+  assignCartesianClosedBraidedCartesianMorphism assignM docoM
 
 
 compileType :: Env -> Type -> Either TypeCompilationError LA.Type
