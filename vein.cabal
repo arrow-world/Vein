@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1912159ae9b2894eca6eb159296737dda131691e89c83282046daa07a6aeff8c
+-- hash: bf3bbff67cb28863e81355c2bf7866968d4e94dc3f5404d815a10fa1b30a738b
 
 name:           vein
 version:        0.1.0.0
@@ -35,19 +35,16 @@ library
       Vein.Core.Monoidal.CompactClosed
       Vein.Core.Monoidal.Monad
       Vein.Core.Monoidal.Monoidal
-      Vein.Temporal.Event
       Vein.Temporal.Types
   other-modules:
       Paths_vein
   hs-source-dirs:
       src
   build-depends:
-      base >=4.7 && <5
-    , bytestring
+      base
     , containers
-    , data-default
     , data-fix
-    , llvm-hs >=9.0.0
+    , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
     , prettyprinter
@@ -62,12 +59,10 @@ executable vein-exe
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
-    , bytestring
+      base
     , containers
-    , data-default
     , data-fix
-    , llvm-hs >=9.0.0
+    , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
     , prettyprinter
@@ -84,12 +79,10 @@ test-suite vein-test
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      base >=4.7 && <5
-    , bytestring
+      base
     , containers
-    , data-default
     , data-fix
-    , llvm-hs >=9.0.0
+    , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
     , prettyprinter

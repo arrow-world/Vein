@@ -4,11 +4,9 @@
 
 module Vein.Temporal.Event where
 
-import qualified Vein.Core.Compile as Compile
 import qualified Vein.Core.Module as M
 import qualified Vein.Core.Const as C
-import Vein.Core.Component (Component, Env)
-import Vein.Core.Monoidal.Monoidal (doco, Object (Unit), Morphism (Compose))
+import Vein.Core.Monoidal.Monoidal (Object (Unit))
 import Vein.Core.Monoidal.CompactClosed (DualityM (DualityM, Ev, Cv))
 
 import qualified LLVM.AST as LA
@@ -91,6 +89,8 @@ require = fmap (M.readQN . T.pack)
   , "Temporal.Event.merge"
   , "Temporal.Event.route"
   ]
+
+type Component = 
 
 data OnRecv m = OnRecv { procOnRecv :: [Operand] -> m () }
 data OnSend m = OnSend { procOnSend :: [Operand] -> m () }

@@ -36,7 +36,7 @@ import LLVM.IRBuilder.Instruction ( add, sub, mul, sdiv, br, condBr, icmp, phi
                                   , insertValue, ret
                                   )
 import LLVM.AST.Constant ( Constant (Int, Float, Undef, InsertValue)
-                         , sizeof, unsignedIntegerValue
+                         , unsignedIntegerValue
                          )
 import LLVM.AST.Typed ( Typed (typeOf) )
 import LLVM.AST.Float ( SomeFloat (Single, Double) )
@@ -261,7 +261,7 @@ compilePrimTypes env tv = case T.unpack $ M.showQN (typeCtor tv) of
 
     ts <- mapM (compileTypeValue env) [TypeVal a xs, TypeVal b ys]
 
-    let szBody = maximum $ fmap (unsignedIntegerValue . sizeof) ts
+    let szBody = undefined -- maximum $ fmap (unsignedIntegerValue . sizeof) ts
         byteBits = 8
         
     return $  LA.StructureType
