@@ -5,12 +5,12 @@ import Vein.Core.Monoidal.Monoidal ( Object (Object, Unit, ProductO)
                                    , Braided (..)
                                    , CartesianClosed (..)
                                    , Cartesian (..)
+                                   , docoMorphismF
                                    , docoBraided
                                    , docoCartesian
                                    , CartesianClosedBraidedCartesianMorphism
                                    , CartesianClosedBraidedCartesianMorphismF (..)
                                    , docoCartesianClosedBraidedCartesianMorphism
-                                   , docoCartesianClosedBraidedCartesian
                                    , MorphismF  ( Id
                                                 , Compose
                                                 , ProductM
@@ -103,20 +103,23 @@ assignCartesianClosedBraidedCartesianMorphism ::  (Monad f, Monad g) =>
                                                     ->  CartesianClosedBraidedCartesianMorphism m o
                                                     ->  f ([a] -> g [a])
 assignCartesianClosedBraidedCartesianMorphism assignM docoM (Fix (CartesianClosedBraidedCartesianMorphismF m)) =
-  assignMorphismF assignM docoM
     (assignCartesianClosed
       (assignCartesian
         (assignBraided
-          (assignCartesianClosedBraidedCartesianMorphism assignM docoM)
-          (docoCartesianClosedBraidedCartesianMorphism docoM)
+          (assignMorphismF assignM docoM
+            (assignCartesianClosedBraidedCartesianMorphism assignM docoM)
+            (docoCartesianClosedBraidedCartesianMorphism docoM)
+          )
+          docoMorphismF'
         )
-        (docoBraided $ docoCartesianClosedBraidedCartesianMorphism docoM)
+        docoBraided'
       )
-      (docoCartesian $ docoBraided $ docoCartesianClosedBraidedCartesianMorphism docoM)
-    )
-    (docoCartesianClosedBraidedCartesian docoM)
-    m
-
+      docoCartesian'
+    ) m
+  where
+    docoMorphismF' = docoMorphismF docoM (docoCartesianClosedBraidedCartesianMorphism docoM)
+    docoBraided' = docoBraided docoMorphismF'
+    docoCartesian' = docoCartesian docoBraided'
 
 
 lenOfOb :: Object a -> Int

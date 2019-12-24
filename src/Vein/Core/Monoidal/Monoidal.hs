@@ -118,65 +118,28 @@ docoCartesianClosed docoM f =
     Eval x y          -> pure ((Object $ Hom x y) >< x, y)
 
 
-type CartesianClosedBraidedCartesian o r =
-  (CartesianClosed (Cartesian (Braided r (WithInternalHom o)) (WithInternalHom o)) o)
+type CartesianClosedBraidedCartesian m o =
+  (CartesianClosed (Cartesian (Braided m (WithInternalHom o)) (WithInternalHom o)) o)
 
 newtype CartesianClosedBraidedCartesianMorphismF m o r =
   CartesianClosedBraidedCartesianMorphismF
-    (MorphismF m (WithInternalHom o) (CartesianClosedBraidedCartesian o r))
+    (CartesianClosedBraidedCartesian (MorphismF m (WithInternalHom o) r) o)
   deriving (Eq, Show)
 
 type CartesianClosedBraidedCartesianMorphism m o =
   Fix (CartesianClosedBraidedCartesianMorphismF m o)
 
-docoCartesianClosedBraidedCartesian ::  Monad f =>
-                                              (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
-                                          ->  CartesianClosedBraidedCartesian o (CartesianClosedBraidedCartesianMorphism m o)
-                                          ->  f (Object (WithInternalHom o), Object (WithInternalHom o))
-docoCartesianClosedBraidedCartesian docoM = 
-  docoCartesianClosed $ docoCartesian $ docoBraided $ docoCartesianClosedBraidedCartesianMorphism docoM
-
 docoCartesianClosedBraidedCartesianMorphism ::  Monad f =>
                                                       (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
                                                   ->  CartesianClosedBraidedCartesianMorphism m o
                                                   ->  f (Object (WithInternalHom o), Object (WithInternalHom o))
-docoCartesianClosedBraidedCartesianMorphism docoM (Fix (CartesianClosedBraidedCartesianMorphismF f)) =
-  docoMorphismF
-    docoM
-    (docoCartesianClosedBraidedCartesian docoM)
-    f
+docoCartesianClosedBraidedCartesianMorphism docoM (Fix (CartesianClosedBraidedCartesianMorphismF m)) = 
+  (
+    docoCartesianClosed $ docoCartesian $ docoBraided $ docoMorphismF docoM
+      (docoCartesianClosedBraidedCartesianMorphism docoM)
+  ) m
 
-
-data Traced m o = Traced m
+data Traced m o =
+    Traced m
   | Trace m
     deriving (Eq, Show, Functor)
-
-newtype TracedMorphismF m o r = TracedMorphismF (MorphismF m o (Traced r o))
-
-docoTracedMorphismF ::  Monad f =>
-                              (m -> f (Object o, Object o))
-                          ->  (r -> f (Object o, Object o))
-                          ->  TracedMorphismF m o r
-                          ->  f (Object o, Object o)
-docoTracedMorphismF docoM docoR (TracedMorphismF f) =
-  docoMorphismF docoM docoR' f
-    where
-      -- docoR' :: Traced r o -> f (Object o, Object o)
-      docoR' f = case f of
-        Traced g -> docoR g
-        Trace g  -> do
-          doco <- docoR g
-          let (ProductO dom _, ProductO cod _) = doco
-          pure (dom , cod)
-
-type TracedMorphism m o = Fix (TracedMorphismF m o)
-
-docoTracedMorphism :: Monad f =>
-                            (m -> f (Object o, Object o))
-                        ->  TracedMorphism m o
-                        ->  f (Object o, Object o)
-docoTracedMorphism docoM (Fix f) =
-  docoTracedMorphismF' docoTracedMorphism' f
-    where
-      docoTracedMorphism' = docoTracedMorphism docoM
-      docoTracedMorphismF' = docoTracedMorphismF docoM
