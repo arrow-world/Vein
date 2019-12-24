@@ -18,6 +18,7 @@ import Vein.Core.Monoidal.Monad (assignCartesianClosedBraidedCartesianMorphism)
 import qualified LLVM.AST as LA
 import qualified LLVM.AST.Name as LAN
 import qualified LLVM.AST.IntegerPredicate as IntegerPredicate
+import qualified LLVM.AST.Constant as LAC
 import qualified Data.Text as T
 import qualified Data.Map.Lazy as Map
 import Data.Char (isAscii)
@@ -40,6 +41,7 @@ import LLVM.AST.Constant ( Constant (Int, Float, Undef, InsertValue)
                          )
 import LLVM.AST.Typed ( Typed (typeOf) )
 import LLVM.AST.Float ( SomeFloat (Single, Double) )
+import LLVM.AST.AddrSpace ( AddrSpace (..) )
 
 data Value =
     Val { valCtor :: M.QN , valParams :: [Value] }
@@ -261,7 +263,7 @@ compilePrimTypes env tv = case T.unpack $ M.showQN (typeCtor tv) of
 
     ts <- mapM (compileTypeValue env) [TypeVal a xs, TypeVal b ys]
 
-    let szBody = undefined -- maximum $ fmap (unsignedIntegerValue . sizeof) ts
+    let szBody = maximum $ fmap (unsignedIntegerValue . sizeof) ts
         byteBits = 8
         
     return $  LA.StructureType
@@ -293,6 +295,13 @@ compilePrimTypes env tv = case T.unpack $ M.showQN (typeCtor tv) of
       Right $ LA.FloatingPointType $ LA.DoubleFP
 
   _ -> Left UnsupportedPrimType
+
+sizeof :: LA.Type -> Constant
+sizeof t = LAC.PtrToInt szPtr (LA.IntegerType 32)
+  where
+     ptrType = LA.PointerType t (AddrSpace 0)
+     nullPtr = LAC.IntToPtr (LAC.Int 32 0) ptrType
+     szPtr   = LAC.GetElementPtr True nullPtr [LAC.Int 32 1]
 
 data TypeCompilationError =
     UndefinedType
