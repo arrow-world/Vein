@@ -22,6 +22,11 @@ data Object a =
 
 (><) = ProductO
 
+joinO :: Object (Object o) -> Object o
+joinO x = case x of
+  Unit -> Unit
+  ProductO x y -> ProductO (joinO x) (joinO y)
+  Object x -> x
 
 data WithInternalHom a =
     WithInternalHom a
