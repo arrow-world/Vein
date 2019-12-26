@@ -105,7 +105,7 @@ type Component = Fix ComponentF
 
 
 data Definition =
-    DefComponent Component
+    DefComponent ([C.Value] -> Component)
   | DefTypeAlias ([C.Value] -> Type)
 
 type Env = M.ModuleMap Definition
