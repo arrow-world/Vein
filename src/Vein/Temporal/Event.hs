@@ -1,13 +1,20 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE ApplicativeDo #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Vein.Temporal.Event where
 
+import Vein.Core.Monoidal.Monoidal ( Object (..) , lenOfOb , flattenOb )
+import Vein.Core.Monoidal.CompactClosed ( DualityM (DualityM, Ev, Cv)
+                                        , CompactClosedCartesianMorphismF
+                                        , CompactClosedCartesianMorphism
+                                        )
+
 import qualified Vein.Core.Module as M
 import qualified Vein.Core.Const as C
-import Vein.Core.Monoidal.Monoidal (Object (Unit))
-import Vein.Core.Monoidal.CompactClosed (DualityM (DualityM, Ev, Cv))
+import qualified Vein.Core.Monoidal.Monoidal as Mo
+import qualified Vein.Core.Monoidal.CompactClosed as CC
 
 import qualified LLVM.AST as LA
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
@@ -17,6 +24,9 @@ import Control.Monad.State ( MonadFix )
 import Data.Foldable ( foldrM )
 import Control.Monad.Reader (Reader, asks, runReader, ReaderT)
 import qualified Data.Text as T
+
+import Data.Fix ( Fix (..) )
+import Data.Either ( partitionEithers )
 
 {-
  - type Event : Type -> Type
@@ -90,16 +100,18 @@ require = fmap (M.readQN . T.pack)
   , "Temporal.Event.route"
   ]
 
-type Component = 
+type ComponentF = CompactClosedCartesianMorphismF M.QN M.QN
+type Component = Fix ComponentF
+
+type Env = ()
 
 data OnRecv m = OnRecv { procOnRecv :: [Operand] -> m () }
 data OnSend m = OnSend { procOnSend :: [Operand] -> m () }
 
 data CortexProc m =
-  CortexProc { portProcs :: [[OnSend m]] -> [[OnRecv m]] }
+  CortexProc { portProcs :: [OnSend m] -> [OnRecv m] }
 
 data ComProc m = ComProc { inProc :: CortexProc m , outProc :: CortexProc m }
-
 
 data Cortex = Cortex Component
 cortex :: Component -> Maybe Cortex
@@ -109,42 +121,37 @@ cortex c =
   else
     Nothing
 
-{-
 compileCortex :: (MonadIRBuilder m) => Cortex -> Either CompileError (CortexProc m)
-compileCortex (Cortex c) = do
-  let portProcs' onSends = 
-    where procOnSends = fmap (\(OnSend p) -> p) onSends
-  return $ Cortex portProcs'
--}
-
-compileCom :: (MonadIRBuilder m, MonadFix m) =>
-                Component -> Reader Env (Either CompileError (ComProc m))
-compileCom c =
-  do
-    env <- ask
-    let run r = runReader r env
-    let docoE v = (doco v) >=> (maybe (Left DoCoFnError) Right)
-
-    assign ? docoE c
-
+compileCortex (Cortex (Fix (CC.CompactClosedCartesianMorphismF c))) =
+  case c of
+    Mo.Diag x -> pure $ empty
+  where
+    compileMorphismF c = case c of
+      Mo.Id x -> pure $ empty
+    
+    empty = CortexProc $ \[] -> []
 
 compilePrimCom :: (MonadIRBuilder m, MonadFix m) => M.QN -> [C.Value] -> Maybe (ComProc m)
 compilePrimCom name args = Nothing
 
 
-type Type = CC.Object M.QN
+type Type = CC.CompactClosedCartesianObject M.QN
 
 
-doco :: C.Value -> Maybe (Type, Type)
-doco = undefined
+splitDuality :: Type -> ([Type], [Type])
+splitDuality x = partitionEithers $ fmap toEither flatten
+  where
+    flatten = Mo.flattenOb x
+
+    toEither x = case x of
+      CC.D x -> Left $ Object $ CC.D x
+      CC.Dual x -> Right x
 
 
-assign :: (Monad f, Monad g) =>
-                (C.Value -> f ([a] -> g [a]))
-            ->  (C.Value -> f (Type, Type))
-            ->  Component
-            ->  f ([a] -> g [a])
-assign = undefined
+docoVal :: C.Value -> Maybe (Type, Type)
+docoVal = undefined
+
+doco = CC.docoCompactClosedCartesianMorphism
 
 
 data DelayedMealy = DM { initState :: C.Value , trans :: C.Function }
@@ -187,3 +194,6 @@ eventLoop ins outs com = do
 
 data CompileError =
     DoCoFnError
+  | CompileCortexError CompileCortexError
+
+data CompileCortexError
