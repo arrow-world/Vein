@@ -1,7 +1,8 @@
 module Vein.Core.Monoidal.Monad where
 
 import Vein.Core.Monoidal.Monoidal ( Object (Object, Unit, ProductO)
-                                   , WithInternalHom (..)
+                                   , WithInternalHom
+                                   , WI (..)
                                    , Braided (..)
                                    , CartesianClosed (..)
                                    , Cartesian (..)
@@ -47,9 +48,9 @@ assignCartesian f doco m =
     Diag _ -> return $ \[x] -> return [x,x]
     Aug _ -> return $ \[x] -> return []
 
-assignCartesianClosed ::  (Monad f, Monad g) =>
+assignCartesianClosed ::  (Monad f, Monad g, WithInternalHom o) =>
                               (m -> f ([a] -> g [a]))
-                          ->  (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
+                          ->  (m -> f (Object o, Object o))
                           ->  CartesianClosed m o
                           ->  f ([a] -> g [a])
 assignCartesianClosed f doco m =
@@ -99,7 +100,7 @@ assignMorphismF assignM docoM assignR docoR m =
 
 assignCartesianClosedBraidedCartesianMorphism ::  (Monad f, Monad g) =>
                                                         (m -> f ([a] -> g [a]))
-                                                    ->  (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
+                                                    ->  (m -> f (Object (WI o), Object (WI o)))
                                                     ->  CartesianClosedBraidedCartesianMorphism m o
                                                     ->  f ([a] -> g [a])
 assignCartesianClosedBraidedCartesianMorphism assignM docoM (Fix (CartesianClosedBraidedCartesianMorphismF m)) =

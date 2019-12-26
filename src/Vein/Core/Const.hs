@@ -9,7 +9,8 @@ module Vein.Core.Const where
 
 import qualified Vein.Core.Module as M
 import Vein.Core.Monoidal.Monoidal ( Object (Object, Unit, ProductO)
-                                   , WithInternalHom (..)
+                                   , WithInternalHom
+                                   , WI (..)
                                    , CartesianClosedBraidedCartesianMorphism
                                    , docoCartesianClosedBraidedCartesianMorphism
                                    )
@@ -55,7 +56,7 @@ data TypeValue =
     TypeVal { typeCtor :: M.QN , typeParams :: [Value] }
   deriving (Eq, Show)
 
-type TypeBase = WithInternalHom TypeValue
+type TypeBase = WI TypeValue
 
 type Function = CartesianClosedBraidedCartesianMorphism Value TypeValue
 type Type = Object TypeBase
@@ -95,7 +96,7 @@ docoVal env v =
         TypeVal { typeCtor = M.readQN (T.pack "Data.Natural.Nat") , typeParams = [] }
 
   where
-    docoConst x = (Unit , Object $ WithInternalHom x)
+    docoConst x = (Unit , Object $ WI x)
 
 docoValPrim :: M.QN -> [Value] -> Maybe (Type, Type)
 docoValPrim ctor params = case T.unpack $ M.showQN ctor of
@@ -226,7 +227,7 @@ compileType :: Env -> Type -> Either TypeCompilationError LA.Type
 compileType env t =
   case t of
     Object t' -> case t' of
-      WithInternalHom tv -> compileTypeValue env tv
+      WI tv -> compileTypeValue env tv
       Hom x y ->  LA.FunctionType
                     <$> compileType' y
                     <*> (pure <$> compileType' x)

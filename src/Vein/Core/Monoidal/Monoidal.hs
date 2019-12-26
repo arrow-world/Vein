@@ -28,12 +28,14 @@ joinO x = case x of
   ProductO x y -> ProductO (joinO x) (joinO y)
   Object x -> x
 
-data WithInternalHom a =
-    WithInternalHom a
-  | Hom (Object (WithInternalHom a)) (Object (WithInternalHom a))
-    deriving (Eq, Functor, Show)
 
-type ObjectWithInternalHom a = Object (WithInternalHom a)
+data WI a =
+    WI a
+  | Hom (Object (WI a)) (Object (WI a))
+  deriving (Eq, Show)
+
+class WithInternalHom a where
+  hom :: Object a -> Object a -> a
 
 
 data MorphismF m a r =
@@ -108,36 +110,40 @@ docoCartesian docoM f =
     Aug x       -> pure (x, Unit)
 
 
-data CartesianClosed m o =
+data WithInternalHom o => CartesianClosed m o =
     CartesianClosed m
-  | Eval (Object (WithInternalHom o)) (Object (WithInternalHom o))
+  | Eval (Object o) (Object o)
     deriving (Eq, Show)
 
-docoCartesianClosed ::  Applicative f =>
-                            (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
+docoCartesianClosed ::  (Applicative f, WithInternalHom o) =>
+                            (m -> f (Object o, Object o))
                         ->  CartesianClosed m o
-                        ->  f (Object (WithInternalHom o), Object (WithInternalHom o))
+                        ->  f (Object o, Object o)
 docoCartesianClosed docoM f =
   case f of
     CartesianClosed g -> docoM g
-    Eval x y          -> pure ((Object $ Hom x y) >< x, y)
+    Eval x y          -> pure ((Object $ hom x y) >< x, y)
+
+
+instance WithInternalHom (WI o) where
+  hom = Hom
 
 
 type CartesianClosedBraidedCartesian m o =
-  (CartesianClosed (Cartesian (Braided m (WithInternalHom o)) (WithInternalHom o)) o)
+  (CartesianClosed (Cartesian (Braided m (WI o)) (WI o)) (WI o))
 
 newtype CartesianClosedBraidedCartesianMorphismF m o r =
   CartesianClosedBraidedCartesianMorphismF
-    (CartesianClosedBraidedCartesian (MorphismF m (WithInternalHom o) r) o)
+    (CartesianClosedBraidedCartesian (MorphismF m (WI o) r) o)
   deriving (Eq, Show)
 
 type CartesianClosedBraidedCartesianMorphism m o =
   Fix (CartesianClosedBraidedCartesianMorphismF m o)
 
 docoCartesianClosedBraidedCartesianMorphism ::  Monad f =>
-                                                      (m -> f (Object (WithInternalHom o), Object (WithInternalHom o)))
+                                                      (m -> f (Object (WI o), Object (WI o)))
                                                   ->  CartesianClosedBraidedCartesianMorphism m o
-                                                  ->  f (Object (WithInternalHom o), Object (WithInternalHom o))
+                                                  ->  f (Object (WI o), Object (WI o))
 docoCartesianClosedBraidedCartesianMorphism docoM (Fix (CartesianClosedBraidedCartesianMorphismF m)) = 
   (
     docoCartesianClosed $ docoCartesian $ docoBraided $ docoMorphismF docoM
