@@ -100,7 +100,7 @@ require = fmap (M.readQN . T.pack)
   , "Temporal.Event.route"
   ]
 
-type ComponentF = CompactClosedCartesianMorphismF M.QN M.QN
+type ComponentF = CompactClosedCartesianMorphismF M.QN TypeValue
 type Component = Fix ComponentF
 
 
@@ -127,15 +127,31 @@ cortex c =
   else
     Nothing
 
-compileCortex :: (MonadIRBuilder m) => Cortex -> Either CompileError (CortexProc m)
+compileCortex :: (MonadIRBuilder m) => Cortex -> Reader Env (Either CompileError (CortexProc m))
 compileCortex (Cortex (Fix (CC.CompactClosedCartesianMorphismF c))) =
   case c of
-    Mo.Diag x -> pure $ empty
-  where
-    compileMorphismF c = case c of
-      Mo.Id x -> pure $ empty
-    
-    empty = CortexProc $ \[] -> []
+    Mo.Cartesian (CC.DualityM (Mo.Braided f)) -> case f of
+      Mo.Id Unit -> pure $ pure $ CortexProc $ \[] -> []
+      Mo.Compose g h -> do
+        g' <- compileComponent g
+        h' <- compileCortex (Cortex h)
+        undefined
+
+    -- Braid is impossible because it's : A >< B -> B >< A, and B >< A cannot be = 1.
+
+    Mo.Cartesian (Ev x) -> undefined
+
+    -- Cv is impossible because it's : 1 -> A >< A*, and A >< A* cannot be = 1.
+
+    Mo.Aug x -> do
+      x' <- splitDuality x
+      pure $ either (Left . ExpandTypeError) Right $ do
+        (forward,backward) <- x'
+
+        -- (length onRecvs) should be = (length forward)
+        pure $ CortexProc $ \onRecvs -> replicate (length backward) undefined
+
+    -- Diag is impossible because it's : A -> A >< A, and A >< A cannot be = 1.
 
 compilePrimCom :: (MonadIRBuilder m, MonadFix m) => M.QN -> [C.Value] -> Maybe (ComProc m)
 compilePrimCom name args = Nothing
@@ -228,6 +244,7 @@ eventLoop ins outs com = do
 
 data CompileError =
     DoCoFnError
+  | ExpandTypeError ExpandTypeError
   | CompileCortexError CompileCortexError
 
 data CompileCortexError
