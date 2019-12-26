@@ -119,29 +119,13 @@ data CortexProc m =
 
 data ComProc m = ComProc { inProc :: CortexProc m , outProc :: CortexProc m }
 
-data Cortex = Cortex Component
-cortex :: Component -> Maybe Cortex
-cortex c =
-  if (snd <$> doco (const Nothing) c) == pure Unit then
-    Just $ Cortex c
-  else
-    Nothing
-
-compileCortex :: (MonadIRBuilder m) => Cortex -> Reader Env (Either CompileError (CortexProc m))
-compileCortex (Cortex (Fix (CC.CompactClosedCartesianMorphismF c))) =
+compileCom :: (MonadIRBuilder m) => Component -> Reader Env (Either CompileError (ComProc m))
+compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
   case c of
     Mo.Cartesian (CC.DualityM (Mo.Braided f)) -> case f of
-      Mo.Id Unit -> pure $ pure $ CortexProc $ \[] -> []
-      Mo.Compose g h -> do
-        g' <- compileComponent g
-        h' <- compileCortex (Cortex h)
-        undefined
-
-    -- Braid is impossible because it's : A >< B -> B >< A, and B >< A cannot be = 1.
+      Mo.Compose g h -> undefined
 
     Mo.Cartesian (Ev x) -> undefined
-
-    -- Cv is impossible because it's : 1 -> A >< A*, and A >< A* cannot be = 1.
 
     Mo.Aug x -> do
       x' <- splitDuality x
@@ -149,9 +133,8 @@ compileCortex (Cortex (Fix (CC.CompactClosedCartesianMorphismF c))) =
         (forward,backward) <- x'
 
         -- (length onRecvs) should be = (length forward)
-        pure $ CortexProc $ \onRecvs -> replicate (length backward) undefined
-
-    -- Diag is impossible because it's : A -> A >< A, and A >< A cannot be = 1.
+        let i = CortexProc $ \onRecvs -> replicate (length backward) undefined
+        pure $ ComProc i (CortexProc $ \[] -> [])
 
 compilePrimCom :: (MonadIRBuilder m, MonadFix m) => M.QN -> [C.Value] -> Maybe (ComProc m)
 compilePrimCom name args = Nothing
@@ -200,8 +183,6 @@ data ExpandTypeError =
 
 docoVal :: C.Value -> Maybe (Type, Type)
 docoVal = undefined
-
-doco = CC.docoCompactClosedCartesianMorphism
 
 
 data DelayedMealy = DM { initState :: C.Value , trans :: C.Function }
