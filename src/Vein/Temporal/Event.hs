@@ -17,14 +17,14 @@ import qualified Vein.Core.Monoidal.Monoidal as Mo
 import qualified Vein.Core.Monoidal.CompactClosed as CC
 
 import qualified LLVM.AST as LA
+import qualified Data.Map.Lazy as Map
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
 import LLVM.IRBuilder.Monad ( MonadIRBuilder , block )
 import LLVM.IRBuilder.Instruction ( br, condBr )
 import Control.Monad.State ( MonadFix )
 import Data.Foldable ( foldrM )
-import Control.Monad.Reader (Reader, asks, runReader, ReaderT)
+import Control.Monad.Reader (Reader, ask, asks, runReader, ReaderT)
 import qualified Data.Text as T
-
 import Data.Fix ( Fix (..) )
 import Data.Either ( partitionEithers )
 
@@ -103,7 +103,13 @@ require = fmap (M.readQN . T.pack)
 type ComponentF = CompactClosedCartesianMorphismF M.QN M.QN
 type Component = Fix ComponentF
 
-type Env = ()
+
+data Definition =
+    DefComponent Component
+  | DefTypeAlias Type
+
+type Env = M.ModuleMap Definition
+
 
 data OnRecv m = OnRecv { procOnRecv :: [Operand] -> m () }
 data OnSend m = OnSend { procOnSend :: [Operand] -> m () }
@@ -138,14 +144,38 @@ compilePrimCom name args = Nothing
 type Type = CC.CompactClosedCartesianObject M.QN
 
 
-splitDuality :: Type -> ([Type], [Type])
-splitDuality x = partitionEithers $ fmap toEither flatten
+splitDuality :: Type -> Reader Env (Either ExpandTypeError ([Type], [Type]))
+splitDuality x =
+  do
+    x' <- expandType x
+    flatten <- pure $ Mo.flattenOb <$> x'
+    pure $ (partitionEithers . fmap toEither) <$> flatten
   where
-    flatten = Mo.flattenOb x
-
     toEither x = case x of
       CC.D x -> Left $ Object $ CC.D x
       CC.Dual x -> Right x
+
+expandType :: Type -> Reader Env (Either ExpandTypeError Type)
+expandType x = case x of
+  Mo.Unit -> pure $ Right Mo.Unit
+
+  Mo.ProductO x y -> do
+    x' <- expandType x
+    y' <- expandType y
+    return $ Mo.ProductO <$> x' <*> y'
+
+  Mo.Object (CC.Dual x) -> expandType x
+
+  Mo.Object (CC.D x) -> do
+    env <- ask
+    pure $ case Map.lookup x env of
+      Just (DefTypeAlias x) -> Right x
+      Just (DefComponent _) -> Left UnexpectedComponentDefinition
+      Nothing -> Left Undefined
+
+data ExpandTypeError =
+    UnexpectedComponentDefinition
+  | Undefined
 
 
 docoVal :: C.Value -> Maybe (Type, Type)
