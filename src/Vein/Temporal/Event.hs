@@ -106,7 +106,7 @@ type Component = Fix ComponentF
 
 data Definition =
     DefComponent Component
-  | DefTypeAlias Type
+  | DefTypeAlias ([C.Value] -> Type)
 
 type Env = M.ModuleMap Definition
 
@@ -141,7 +141,11 @@ compilePrimCom :: (MonadIRBuilder m, MonadFix m) => M.QN -> [C.Value] -> Maybe (
 compilePrimCom name args = Nothing
 
 
-type Type = CC.CompactClosedCartesianObject M.QN
+data TypeValue =
+    TypeValue { typeCtor :: M.QN , typeParams :: [C.Value] }
+  deriving (Eq, Show)
+
+type Type = CC.CompactClosedCartesianObject TypeValue
 
 
 splitDuality :: Type -> Reader Env (Either ExpandTypeError ([Type], [Type]))
@@ -166,10 +170,10 @@ expandType x = case x of
 
   Mo.Object (CC.Dual x) -> expandType x
 
-  Mo.Object (CC.D x) -> do
+  Mo.Object (CC.D (TypeValue ctor params)) -> do
     env <- ask
-    pure $ case Map.lookup x env of
-      Just (DefTypeAlias x) -> Right x
+    pure $ case Map.lookup ctor env of
+      Just (DefTypeAlias t) -> Right $ t params
       Just (DefComponent _) -> Left UnexpectedComponentDefinition
       Nothing -> Left Undefined
 
