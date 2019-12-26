@@ -28,6 +28,16 @@ joinO x = case x of
   ProductO x y -> ProductO (joinO x) (joinO y)
   Object x -> x
 
+lenOfOb :: Object a -> Int
+lenOfOb (ProductO x y) = lenOfOb x + lenOfOb y
+lenOfOb Unit = 0
+lenOfOb (Object _) = 1
+
+flattenOb :: Object a -> [a]
+flattenOb (Object x) = [x]
+flattenOb Unit = []
+flattenOb (ProductO x y) = flattenOb x ++ flattenOb y
+
 
 data WI a =
     WI a

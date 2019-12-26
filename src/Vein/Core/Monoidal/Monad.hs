@@ -12,6 +12,7 @@ import Vein.Core.Monoidal.Monoidal ( Object (Object, Unit, ProductO)
                                    , CartesianClosedBraidedCartesianMorphism
                                    , CartesianClosedBraidedCartesianMorphismF (..)
                                    , docoCartesianClosedBraidedCartesianMorphism
+                                   , lenOfOb
                                    , MorphismF  ( Id
                                                 , Compose
                                                 , ProductM
@@ -121,13 +122,3 @@ assignCartesianClosedBraidedCartesianMorphism assignM docoM (Fix (CartesianClose
     docoMorphismF' = docoMorphismF docoM (docoCartesianClosedBraidedCartesianMorphism docoM)
     docoBraided' = docoBraided docoMorphismF'
     docoCartesian' = docoCartesian docoBraided'
-
-
-lenOfOb :: Object a -> Int
-lenOfOb (ProductO x y) = lenOfOb x + lenOfOb y
-lenOfOb _ = 1
-
-flattenOb :: Object a -> [a]
-flattenOb (Object x) = [x]
-flattenOb Unit = []
-flattenOb (ProductO x y) = flattenOb x ++ flattenOb y

@@ -35,6 +35,7 @@ data DI o =
     DI o
   | Dual' (Monoidal.Object (DI o))
   | Hom' (Monoidal.Object (DI o)) (Monoidal.Object (DI o))
+    deriving (Eq, Show)
 
 instance DualityObject (DI a) where
   dual = Dual'
@@ -53,23 +54,24 @@ docoDualityM docoM f =
     Ev x       -> pure (x >< (Monoidal.Object $ dual x), Monoidal.Unit)
     Cv x       -> pure (Monoidal.Unit, x >< (Monoidal.Object $ dual x))
 
+type CompactClosedCartesianObject o = Object (D o)
 
-type CompactClosedCartesianClosedCartesian m o =
-  Monoidal.CartesianClosed (Monoidal.Cartesian (DualityM (Monoidal.Braided m (DI o)) (DI o)) (DI o)) (DI o)
+type CompactClosedCartesian m o =
+  Monoidal.Cartesian (DualityM (Monoidal.Braided m (D o)) (D o)) (D o)
 
-newtype CompactClosedCartesianClosedCartesianMorphismF m o r =
-  CompactClosedCartesianClosedCartesianMorphismF
-    (CompactClosedCartesianClosedCartesian (Monoidal.MorphismF m (DI o) r) o)
+newtype CompactClosedCartesianMorphismF m o r =
+  CompactClosedCartesianMorphismF
+    (CompactClosedCartesian (Monoidal.MorphismF m (D o) r) o)
 
-type CompactClosedCartesianClosedCartesianMorphism m o =
-  Fix (CompactClosedCartesianClosedCartesianMorphismF m o)
+type CompactClosedCartesianMorphism m o =
+  Fix (CompactClosedCartesianMorphismF m o)
 
-docoCompactClosedCartesianClosedCartesianMorphism ::  Monad f =>
-                                                            (m -> f (Monoidal.Object (DI o), Monoidal.Object (DI o)))
-                                                        ->  CompactClosedCartesianClosedCartesianMorphism m o
-                                                        ->  f (Monoidal.Object (DI o), Monoidal.Object (DI o))
-docoCompactClosedCartesianClosedCartesianMorphism docoM (Fix (CompactClosedCartesianClosedCartesianMorphismF m)) = 
+docoCompactClosedCartesianMorphism ::  Monad f =>
+                                                            (m -> f (Monoidal.Object (D o), Monoidal.Object (D o)))
+                                                        ->  CompactClosedCartesianMorphism m o
+                                                        ->  f (Monoidal.Object (D o), Monoidal.Object (D o))
+docoCompactClosedCartesianMorphism docoM (Fix (CompactClosedCartesianMorphismF m)) = 
   (
-    Monoidal.docoCartesianClosed $ Monoidal.docoCartesian $ docoDualityM $ Monoidal.docoBraided $ Monoidal.docoMorphismF docoM
-      (docoCompactClosedCartesianClosedCartesianMorphism docoM)
+    Monoidal.docoCartesian $ docoDualityM $ Monoidal.docoBraided $ Monoidal.docoMorphismF docoM
+      (docoCompactClosedCartesianMorphism docoM)
   ) m
