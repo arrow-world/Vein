@@ -111,18 +111,20 @@ data Definition =
 type Env = M.ModuleMap Definition
 
 
-data OnRecv m = OnRecv { procOnRecv :: [Operand] -> m () }
-data OnSend m = OnSend { procOnSend :: [Operand] -> m () }
+type Proc m = [Operand] -> m ()
 
-data CortexProc m =
-  CortexProc { portProcs :: [OnSend m] -> [OnRecv m] }
+data OnSends m = OnSends { upProcOnSends :: [Proc m] , downProcOnSends :: [Proc m] }
+data OnRecvs m = OnRecvs { upProcOnRecvs :: [Proc m] , downProcOnRecvs :: [Proc m] }
 
-data ComProc m = ComProc { inProc :: CortexProc m , outProc :: CortexProc m }
+data ComProc m = ComProc (OnSends m -> OnRecvs m)
 
 compileCom :: (MonadIRBuilder m) => Component -> Reader Env (Either CompileError (ComProc m))
 compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
   case c of
     Mo.Cartesian (CC.DualityM (Mo.Braided f)) -> case f of
+
+      Mo.Id x -> pure $ pure $ ComProc $ \onSends -> OnRecvs (downProcOnSends onSends) (upProcOnSends onSends)
+
       Mo.Compose g h -> undefined
 
     Mo.Cartesian (Ev x) -> undefined
@@ -132,9 +134,10 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
       pure $ either (Left . ExpandTypeError) Right $ do
         (forward,backward) <- x'
 
-        -- (length onRecvs) should be = (length forward)
-        let i = CortexProc $ \onRecvs -> replicate (length backward) undefined
-        pure $ ComProc i (CortexProc $ \[] -> [])
+        -- (length up) should be = (length backward)
+        pure $ ComProc $ \(OnSends up []) -> OnRecvs (replicate (length forward) nop) []
+  where
+    nop = return undefined
 
 compilePrimCom :: (MonadIRBuilder m, MonadFix m) => M.QN -> [C.Value] -> Maybe (ComProc m)
 compilePrimCom name args = Nothing
@@ -145,6 +148,10 @@ data TypeValue =
   deriving (Eq, Show)
 
 type Type = CC.CompactClosedCartesianObject TypeValue
+
+
+liftExpandTypeErr :: Reader Env (Either ExpandTypeError a) -> Reader Env (Either CompileError a)
+liftExpandTypeErr = fmap $ either (Left . ExpandTypeError) Right
 
 
 splitDuality :: Type -> Reader Env (Either ExpandTypeError ([Type], [Type]))
