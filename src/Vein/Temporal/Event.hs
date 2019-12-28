@@ -137,7 +137,7 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
         -- (length up) should be = (length backward)
         pure $ ComProc $ \(OnSends up []) -> OnRecvs (replicate (length forward) nop) []
   where
-    nop = return undefined
+    nop = const $ return ()
 
 compilePrimCom :: (MonadIRBuilder m, MonadFix m) => M.QN -> [C.Value] -> Maybe (ComProc m)
 compilePrimCom name args = Nothing
