@@ -114,9 +114,15 @@ type Env = M.ModuleMap Definition
 type Cont m = [Operand] -> m ()
 data MonadIRBuilder m => OnSends m = OnSends { contOnSends :: [Cont m] }
 data MonadIRBuilder m => OnRecvs m = OnRecvs { contOnRecvs :: [Cont m] }
-data Interface = Interface { blockName :: LA.Name , varNames :: [LA.Name] }
-data Flow m = Flow { proc :: OnSends m -> OnRecvs m , ifs :: Maybe [Interface] }
-type ComProc m = m (Flow m, Flow m)
+
+data Interference = Interference { blockName :: LA.Name , varNames :: [LA.Name] }
+data Interferences =
+    EvInterferences [Interference]
+  | CvInterferences [Interference]
+  | NoInterferences
+
+data Flow m = Flow (OnSends m -> OnRecvs m)
+type ComProc m = m (Flow m, Flow m, Interferences)
 
 compileCom :: (MonadIRBuilder m) => Component -> Reader Env (Either CompileError (ComProc m))
 compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
@@ -124,8 +130,9 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
     Mo.Cartesian (CC.DualityM (Mo.Braided f)) -> case f of
 
       Mo.Id x -> pure $ pure $
-        return  ( Flow ( \(OnSends conts) -> OnRecvs conts ) Nothing
-                , Flow ( \(OnSends conts) -> OnRecvs conts ) Nothing
+        return  ( Flow ( \(OnSends conts) -> OnRecvs conts )
+                , Flow ( \(OnSends conts) -> OnRecvs conts )
+                , NoInterferences
                 )
       
       Mo.Compose g h -> do
@@ -135,8 +142,8 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
           g'' <- g'
           h'' <- h'
           pure $ do
-            (Flow procOG ifsOG , Flow procIG ifsIG) <- g''
-            (Flow procOH ifsOH , Flow procIH ifsIH) <- h''
+            (Flow procOG , Flow procIG , is) <- g''
+            (Flow procOH , Flow procIH , is) <- h''
             -- return (Flow )
             return undefined
     
@@ -148,7 +155,7 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
         let namesInOrder = outboundNames ++ inboundNames
 
         return  ( Flow  ( \(OnSends []) -> OnRecvs $ fmap
-                            ( \(Interface dst vars) -> \ops ->
+                            ( \(Interference dst vars) -> \ops ->
                                 do
                                   sequence $ fmap (\(var,op) -> return $ var LA.:= op) $ zip vars ops
                                   br dst
@@ -156,8 +163,8 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
                             )
                             namesInOrder
                         )
-                        $ Just namesInOrder
-                , Flow  (const $ OnRecvs []) $ Nothing
+                , Flow  (const $ OnRecvs [])
+                , EvInterferences namesInOrder
                 )
     
     Mo.Cartesian (CC.Cv x) -> splitDuality' x $ \outbound inbound ->
@@ -167,9 +174,9 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
 
         let namesInOrder = inboundNames ++ outboundNames
 
-        return  ( Flow  (const $ OnRecvs []) $ Nothing
+        return  ( Flow  (const $ OnRecvs [])
                 , Flow  ( \(OnSends []) -> OnRecvs $ fmap
-                            ( \(Interface dst vars) -> \ops ->
+                            ( \(Interference dst vars) -> \ops ->
                                 do
                                   sequence $ fmap (\(var,op) -> return $ var LA.:= op) $ zip vars ops
                                   br dst
@@ -177,7 +184,7 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
                             )
                             namesInOrder
                         )
-                        $ Just namesInOrder
+                , CvInterferences namesInOrder
                 )
     
     {-
@@ -195,9 +202,9 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
     names :: MonadIRBuilder m => Int -> m [LA.Name]
     names n = sequence $ replicate n fresh
 
-    blockAndVarNames :: MonadIRBuilder m => [Type] -> m [Interface]
+    blockAndVarNames :: MonadIRBuilder m => [Type] -> m [Interference]
     blockAndVarNames flattenEventType =
-      map ( \(blockName,varNames) -> Interface blockName varNames ) <$>
+      map ( \(blockName,varNames) -> Interference blockName varNames ) <$>
         ( zip <$> names (length flattenEventType) <*> (sequence $ fmap (names . lengthConstTypeAsLlvmType) flattenEventType) )
 
     splitDuality' x f = do
