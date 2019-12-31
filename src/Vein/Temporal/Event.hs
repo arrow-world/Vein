@@ -19,7 +19,7 @@ import qualified Vein.Core.Monoidal.CompactClosed as CC
 import qualified LLVM.AST as LA
 import qualified Data.Map.Lazy as Map
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
-import LLVM.IRBuilder.Monad ( MonadIRBuilder , block )
+import LLVM.IRBuilder.Monad ( MonadIRBuilder , block , emitBlockStart , fresh )
 import LLVM.IRBuilder.Instruction ( br, condBr )
 import Control.Monad.State ( MonadFix )
 import Data.Foldable ( foldrM )
@@ -111,24 +111,59 @@ data Definition =
 type Env = M.ModuleMap Definition
 
 
-type Proc m = [Operand] -> m ()
-
-data OnSends m = OnSends { upProcOnSends :: [Proc m] , downProcOnSends :: [Proc m] }
-data OnRecvs m = OnRecvs { upProcOnRecvs :: [Proc m] , downProcOnRecvs :: [Proc m] }
-
-data ComProc m = ComProc (OnSends m -> OnRecvs m)
+type Cont m = [Operand] -> m ()
+data MonadIRBuilder m => OnSends m = OnSends { contOnSends :: [Cont m] }
+data MonadIRBuilder m => OnRecvs m = OnRecvs { contOnRecvs :: [Cont m] }
+data Interface = Interface { blockName :: LA.Name , varNames :: [LA.Name] }
+data Flow m = Flow { proc :: OnSends m -> OnRecvs m , ifs :: Maybe [Interface] }
+type ComProc m = m (Flow m, Flow m)
 
 compileCom :: (MonadIRBuilder m) => Component -> Reader Env (Either CompileError (ComProc m))
 compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
   case c of
+    {-
     Mo.Cartesian (CC.DualityM (Mo.Braided f)) -> case f of
 
-      Mo.Id x -> pure $ pure $ ComProc $ \onSends -> OnRecvs (downProcOnSends onSends) (upProcOnSends onSends)
+      Mo.Id x -> pure $ pure $
+        return  ( \(OnSends conts) -> OnRecvs conts
+                , \(OnSends conts) -> OnRecvs conts
+                )
+      
+      Mo.Compose g h -> do
+        g' <- compileCom g
+        h' <- compileCom h
+        pure $ do
+          ComProc g'' <- g'
+          ComProc h'' <- h'
+          pure $ ComProc $ \(OnSends _ down) ->
+            let
+              OnRecvs upOnRecvsH _ = h'' $ OnSends undefined down
+              OnRecvs upOnRecvsG _ = g'' $ OnSends undefined upOnRecvsH
+            in
+              OnRecvs upOnRecvsG undefined 
+    -}
+    
+    Mo.Cartesian (CC.Ev x) -> splitDuality' x $ \outbound inbound ->
+      do
+        outboundNames <- blockAndVarNames outbound
+        inboundNames <- blockAndVarNames inbound
 
-      Mo.Compose g h -> undefined
+        let namesInOrder = outboundNames ++ inboundNames
 
-    Mo.Cartesian (Ev x) -> undefined
-
+        return  ( Flow  ( \(OnSends []) -> OnRecvs $ fmap
+                            ( \(Interface dst vars) -> \ops ->
+                                do
+                                  sequence $ fmap (\(var,op) -> return $ var LA.:= op) $ zip vars ops
+                                  br dst
+                                  return ()
+                            )
+                            namesInOrder
+                        )
+                        $ Just namesInOrder
+                , Flow  (const $ OnRecvs []) $ Nothing
+                )
+    
+    {-
     Mo.Aug x -> do
       x' <- splitDuality x
       pure $ either (Left . ExpandTypeError) Right $ do
@@ -136,8 +171,27 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
 
         -- (length up) should be = (length backward)
         pure $ ComProc $ \(OnSends up []) -> OnRecvs (replicate (length forward) nop) []
+    -}
   where
-    nop = const $ return ()
+    -- nop = const $ label $ const $ return []
+
+    names :: MonadIRBuilder m => Int -> m [LA.Name]
+    names n = sequence $ replicate n fresh
+
+    blockAndVarNames :: MonadIRBuilder m => [Type] -> m [Interface]
+    blockAndVarNames flattenEventType =
+      map ( \(blockName,varNames) -> Interface blockName varNames ) <$>
+        ( zip <$> names (length flattenEventType) <*> (sequence $ fmap (names . lengthConstTypeAsLlvmType) flattenEventType) )
+
+    splitDuality' x f = do
+      x' <- splitDuality x
+
+      pure $ either (Left . ExpandTypeError) Right $ do
+        (outbound,inbound) <- x'
+        pure $ f outbound inbound
+    
+    -- provisional for supporting multiple operands
+    lengthConstTypeAsLlvmType t = 1
 
 compilePrimCom :: (MonadIRBuilder m, MonadFix m) => M.QN -> [C.Value] -> Maybe (ComProc m)
 compilePrimCom name args = Nothing
