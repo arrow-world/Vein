@@ -121,14 +121,14 @@ type ComProc m = m (Flow m, Flow m)
 compileCom :: (MonadIRBuilder m) => Component -> Reader Env (Either CompileError (ComProc m))
 compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
   case c of
-    {-
     Mo.Cartesian (CC.DualityM (Mo.Braided f)) -> case f of
 
       Mo.Id x -> pure $ pure $
-        return  ( \(OnSends conts) -> OnRecvs conts
-                , \(OnSends conts) -> OnRecvs conts
+        return  ( Flow ( \(OnSends conts) -> OnRecvs conts ) Nothing
+                , Flow ( \(OnSends conts) -> OnRecvs conts ) Nothing
                 )
       
+    {-
       Mo.Compose g h -> do
         g' <- compileCom g
         h' <- compileCom h
