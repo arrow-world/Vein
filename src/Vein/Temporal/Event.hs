@@ -142,17 +142,37 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
           g'' <- g'
           h'' <- h'
           pure $ do
-            (Flow procOG , Flow procIG , is) <- g''
-            (Flow procOH , Flow procIH , is) <- h''
-            -- return (Flow )
-            return undefined
+            (Flow procOG , Flow procIG , isG) <- g''
+            (Flow procOH , Flow procIH , isH) <- h''
+
+            let normalFlowO = composeFlow procOG procOH
+            let normalFlowI = composeFlow procIH procIG
+            let normal = (Flow normalFlowO , Flow normalFlowI , NoInterferences)
+
+            case (isG,isH) of
+              (NoInterferences , NoInterferences) -> return normal
+              (CvInterferences is , NoInterferences) ->
+                return  ( Flow $ \onSends ->
+                            let (OnRecvs conts) = normalFlowO onSends in
+                              OnRecvs $ fmap
+                                ( \(cont, Interference blockName varNames) -> \[] -> do
+                                    emitBlockStart blockName
+                                    cont $ fmap (LA.LocalReference undefined) varNames
+                                )
+                                $ zip conts is
+                        , Flow normalFlowI
+                        , NoInterferences
+                        )
+              -- (CvInterferences _ , EvInterferences _ ) -> Left LoopDetected
+      where
+        composeFlow flowA flowB = \onSends ->
+          let (OnRecvs conts) = flowB onSends in 
+            flowA $ OnSends conts
     
     Mo.Cartesian (CC.Ev x) -> splitDuality' x $ \outbound inbound ->
       do
         outboundNames <- blockAndVarNames outbound
         inboundNames <- blockAndVarNames inbound
-
-        let namesInOrder = outboundNames ++ inboundNames
 
         return  ( Flow  ( \(OnSends []) -> OnRecvs $ fmap
                             ( \(Interference dst vars) -> \ops ->
@@ -161,18 +181,16 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
                                   br dst
                                   return ()
                             )
-                            namesInOrder
+                            $ outboundNames ++ inboundNames
                         )
                 , Flow  (const $ OnRecvs [])
-                , EvInterferences namesInOrder
+                , EvInterferences $ inboundNames ++ outboundNames
                 )
     
     Mo.Cartesian (CC.Cv x) -> splitDuality' x $ \outbound inbound ->
       do
         outboundNames <- blockAndVarNames outbound
         inboundNames <- blockAndVarNames inbound
-
-        let namesInOrder = inboundNames ++ outboundNames
 
         return  ( Flow  (const $ OnRecvs [])
                 , Flow  ( \(OnSends []) -> OnRecvs $ fmap
@@ -182,9 +200,9 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
                                   br dst
                                   return ()
                             )
-                            namesInOrder
+                            $ inboundNames ++ outboundNames
                         )
-                , CvInterferences namesInOrder
+                , CvInterferences $ outboundNames ++ inboundNames
                 )
     
     {-
@@ -311,6 +329,4 @@ eventLoop ins outs com = do
 data CompileError =
     DoCoFnError
   | ExpandTypeError ExpandTypeError
-  | CompileCortexError CompileCortexError
-
-data CompileCortexError
+  | LoopDetected
