@@ -128,20 +128,17 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
                 , Flow ( \(OnSends conts) -> OnRecvs conts ) Nothing
                 )
       
-    {-
       Mo.Compose g h -> do
         g' <- compileCom g
         h' <- compileCom h
         pure $ do
-          ComProc g'' <- g'
-          ComProc h'' <- h'
-          pure $ ComProc $ \(OnSends _ down) ->
-            let
-              OnRecvs upOnRecvsH _ = h'' $ OnSends undefined down
-              OnRecvs upOnRecvsG _ = g'' $ OnSends undefined upOnRecvsH
-            in
-              OnRecvs upOnRecvsG undefined 
-    -}
+          g'' <- g'
+          h'' <- h'
+          pure $ do
+            (Flow procOG ifsOG , Flow procIG ifsIG) <- g''
+            (Flow procOH ifsOH , Flow procIH ifsIH) <- h''
+            -- return (Flow )
+            return undefined
     
     Mo.Cartesian (CC.Ev x) -> splitDuality' x $ \outbound inbound ->
       do
@@ -161,6 +158,26 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
                         )
                         $ Just namesInOrder
                 , Flow  (const $ OnRecvs []) $ Nothing
+                )
+    
+    Mo.Cartesian (CC.Cv x) -> splitDuality' x $ \outbound inbound ->
+      do
+        outboundNames <- blockAndVarNames outbound
+        inboundNames <- blockAndVarNames inbound
+
+        let namesInOrder = inboundNames ++ outboundNames
+
+        return  ( Flow  (const $ OnRecvs []) $ Nothing
+                , Flow  ( \(OnSends []) -> OnRecvs $ fmap
+                            ( \(Interface dst vars) -> \ops ->
+                                do
+                                  sequence $ fmap (\(var,op) -> return $ var LA.:= op) $ zip vars ops
+                                  br dst
+                                  return ()
+                            )
+                            namesInOrder
+                        )
+                        $ Just namesInOrder
                 )
     
     {-
