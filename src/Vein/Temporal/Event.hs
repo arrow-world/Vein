@@ -153,7 +153,7 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
               (NoInterferences , NoInterferences) -> return normal
               (CvInterferences is , NoInterferences) ->
                 return  ( Flow $ \onSends ->
-                            let (OnRecvs conts) = normalFlowO onSends in
+                            let (OnRecvs conts) = procOH onSends in
                               OnRecvs $ fmap
                                 ( \(cont, Interference blockName varNames) -> \[] -> do
                                     emitBlockStart blockName
@@ -161,6 +161,18 @@ compileCom (Fix (CC.CompactClosedCartesianMorphismF c)) =
                                 )
                                 $ zip conts is
                         , Flow normalFlowI
+                        , NoInterferences
+                        )
+              (NoInterferences , EvInterferences is) ->
+                return  ( Flow normalFlowO
+                        , Flow $ \onSends ->
+                            let (OnRecvs conts) = procIG onSends in
+                              OnRecvs $ fmap
+                                ( \(cont, Interference blockName varNames) -> \[] -> do
+                                    emitBlockStart blockName
+                                    cont $ fmap (LA.LocalReference undefined) varNames
+                                )
+                                $ zip conts is
                         , NoInterferences
                         )
               -- (CvInterferences _ , EvInterferences _ ) -> Left LoopDetected
