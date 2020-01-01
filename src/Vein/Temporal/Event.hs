@@ -110,7 +110,22 @@ data Definition =
 
 type Env = M.ModuleMap Definition
 
+data Position = Position { row :: Int , column :: Int }
+data BlockSize = BlockSize { weight :: Int , height :: Int }
 
+scanCom :: Monad m => (ComponentF Component -> BlockSize -> m a) -> Component -> Reader Env (Either ScanError (m a))
+scanCom visitor (Fix c) =
+  let (CC.CompactClosedCartesianMorphismF c') = c in
+    case c' of
+
+      Mo.Cartesian (CC.DualityM (Mo.Braided f)) -> case f of
+
+        Mo.Id x -> flattenType' x $ \xs -> visitor c $ BlockSize 1 $ length xs
+
+  where
+    flattenType' x f = do
+      x' <- flattenType x
+      liftExpandTypeErr $ pure $ pure $ f x'
 
 
 data TypeValue =
@@ -120,15 +135,21 @@ data TypeValue =
 type Type = CC.CompactClosedCartesianObject TypeValue
 
 
-liftExpandTypeErr :: Reader Env (Either ExpandTypeError a) -> Reader Env (Either CompileError a)
+liftExpandTypeErr :: Reader Env (Either ExpandTypeError a) -> Reader Env (Either ScanError a)
 liftExpandTypeErr = fmap $ either (Left . ExpandTypeError) Right
+
+
+flattenType :: Type -> Reader Env (Either ExpandTypeError [CC.D TypeValue])
+flattenType x =
+  do
+    x' <- expandType x
+    pure $ Mo.flattenOb <$> x'
 
 
 splitDuality :: Type -> Reader Env (Either ExpandTypeError ([Type], [Type]))
 splitDuality x =
   do
-    x' <- expandType x
-    flatten <- pure $ Mo.flattenOb <$> x'
+    flatten <- flattenType x
     pure $ (partitionEithers . fmap toEither) <$> flatten
   where
     toEither x = case x of
@@ -200,7 +221,8 @@ eventLoop ins outs com = do
 
   br loop
 
-data CompileError =
+data CompileError
+
+data ScanError =
     DoCoFnError
   | ExpandTypeError ExpandTypeError
-  | LoopDetected
