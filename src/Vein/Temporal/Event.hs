@@ -1,6 +1,8 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Vein.Temporal.Event where
@@ -23,10 +25,12 @@ import LLVM.IRBuilder.Monad ( MonadIRBuilder , block , emitBlockStart , fresh )
 import LLVM.IRBuilder.Instruction ( br, condBr )
 import Control.Monad.State ( MonadFix )
 import Data.Foldable ( foldrM )
-import Control.Monad.Reader (Reader, ask, asks, runReader, ReaderT)
+import Control.Monad.Reader (Reader, ask, asks, runReader, ReaderT, mapReaderT)
+import Control.Monad.Except (throwError)
 import qualified Data.Text as T
 import Data.Fix ( Fix (..) )
 import Data.Either ( partitionEithers )
+import Numeric.Natural ( Natural )
 
 {-
  - type Event : Type -> Type
@@ -110,23 +114,47 @@ data Definition =
 
 type Env = M.ModuleMap Definition
 
-data Position = Position { row :: Int , column :: Int }
-data BlockSize = BlockSize { weight :: Int , height :: Int }
 
-scanCom :: Monad m => (ComponentF Component -> BlockSize -> m a) -> Component -> Reader Env (Either ScanError (m a))
-scanCom visitor (Fix c) =
+compileCom :: MonadIRBuilder m => Component -> Reader Env (Either ScanError (ComProc m LA.Name [Operand]))
+compileCom = undefined
+
+
+class Monad m => CodeBuilder m label where
+  goto :: label -> m ()
+  label :: label -> m ()
+
+instance MonadIRBuilder m => CodeBuilder m LA.Name where
+  goto = br
+  label = emitBlockStart
+
+data CodeBuilder m l => ComProc m l a = ComProc { outputs :: [m a] , terminals :: [m ()] }
+type Visitor m l a = M.QN -> [m a] -> ComProc m l a
+
+data InputPort =
+    LeftInputPort Natural
+  | RightInputPort Natural
+    deriving (Eq, Show)
+
+scanCom :: CodeBuilder m l => Visitor m l a -> Component -> InputPort
+                                -> ReaderT Env (Either ScanError) ([m a] -> ComProc m l a)
+scanCom visitor (Fix c) port =
   let (CC.CompactClosedCartesianMorphismF c') = c in
     case c' of
 
       Mo.Cartesian (CC.DualityM (Mo.Braided f)) -> case f of
 
-        Mo.Id x -> flattenType' x $ \xs -> visitor c $ BlockSize 1 $ length xs
-
+        Mo.Id x -> do
+          (outbound,inbound) <- splitDuality' x
+          case port of
+            LeftInputPort n | fromIntegral n < length outbound -> pure $ \[m] -> ComProc [m] []
+            RightInputPort n | fromIntegral n < length inbound -> pure $ \[m] -> ComProc [m] []
+            _ -> throwError $ InvalidInputPort port
   where
-    flattenType' x f = do
-      x' <- flattenType x
-      liftExpandTypeErr $ pure $ pure $ f x'
+    splitDuality' = (mapReaderT liftExpandTypeErr) . splitDuality
+    flattenType' = (mapReaderT liftExpandTypeErr) . flattenType
 
+    liftExpandTypeErr :: Either ExpandTypeError a -> Either ScanError a
+    liftExpandTypeErr = either (Left . ExpandTypeError) Right
 
 data TypeValue =
     TypeValue { typeCtor :: M.QN , typeParams :: [C.Value] }
@@ -135,44 +163,35 @@ data TypeValue =
 type Type = CC.CompactClosedCartesianObject TypeValue
 
 
-liftExpandTypeErr :: Reader Env (Either ExpandTypeError a) -> Reader Env (Either ScanError a)
-liftExpandTypeErr = fmap $ either (Left . ExpandTypeError) Right
+flattenType :: Type -> ReaderT Env (Either ExpandTypeError) [CC.D TypeValue]
+flattenType x = Mo.flattenOb <$> expandType x
 
-
-flattenType :: Type -> Reader Env (Either ExpandTypeError [CC.D TypeValue])
-flattenType x =
-  do
-    x' <- expandType x
-    pure $ Mo.flattenOb <$> x'
-
-
-splitDuality :: Type -> Reader Env (Either ExpandTypeError ([Type], [Type]))
-splitDuality x =
-  do
-    flatten <- flattenType x
-    pure $ (partitionEithers . fmap toEither) <$> flatten
+splitDuality :: Type -> ReaderT Env (Either ExpandTypeError) ([Type],[Type])
+splitDuality x = (partitionEithers . fmap toEither) <$> flattenType x
   where
     toEither x = case x of
       CC.D x -> Left $ Object $ CC.D x
       CC.Dual x -> Right x
 
-expandType :: Type -> Reader Env (Either ExpandTypeError Type)
+
+expandType :: Type -> ReaderT Env (Either ExpandTypeError) Type
 expandType x = case x of
-  Mo.Unit -> pure $ Right Mo.Unit
+  Mo.Unit -> pure $ Mo.Unit
 
-  Mo.ProductO x y -> do
+  Mo.ProductO x y -> Mo.ProductO <$> expandType x <*> expandType y
+
+  Mo.Object (CC.Dual x) -> do
     x' <- expandType x
-    y' <- expandType y
-    return $ Mo.ProductO <$> x' <*> y'
-
-  Mo.Object (CC.Dual x) -> expandType x
+    case x' of
+      Mo.Object (CC.Dual y) -> expandType y
+      y -> pure $ Mo.Object $ CC.Dual y
 
   Mo.Object (CC.D (TypeValue ctor params)) -> do
     env <- ask
-    pure $ case Map.lookup ctor env of
-      Just (DefTypeAlias t) -> Right $ t params
-      Just (DefComponent _) -> Left UnexpectedComponentDefinition
-      Nothing -> Left Undefined
+    case Map.lookup ctor env of
+      Just (DefTypeAlias t) -> pure $ t params
+      Just (DefComponent _) -> throwError UnexpectedComponentDefinition
+      Nothing -> throwError Undefined
 
 data ExpandTypeError =
     UnexpectedComponentDefinition
@@ -226,3 +245,4 @@ data CompileError
 data ScanError =
     DoCoFnError
   | ExpandTypeError ExpandTypeError
+  | InvalidInputPort InputPort
