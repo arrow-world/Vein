@@ -127,17 +127,24 @@ instance MonadIRBuilder m => CodeBuilder m LA.Name where
   goto = br
   label = emitBlockStart
 
-data CodeBuilder m l => ComProc m l a = ComProc { outputs :: [m a] , terminals :: [m ()] }
-type Visitor m l a = M.QN -> [m a] -> ComProc m l a
-
 data InputPort =
     LeftInputPort Natural
   | RightInputPort Natural
     deriving (Eq, Show)
 
-scanCom :: CodeBuilder m l => Visitor m l a -> Component -> InputPort
-                                -> ReaderT Env (Either ScanError) ([m a] -> ComProc m l a)
-scanCom visitor (Fix c) port =
+data OutputPort =
+    RightOutputPort Natural
+  | LeftOutputPort Natural
+    deriving (Eq, Show)
+
+data CodeBuilder m l => ComProc m l a = ComProc { outputs :: [(OutputPort , a -> m a)] , terminals :: [a -> m ()] }
+type Visitor = ()
+type Output m a = (OutputPort , a -> m a)
+type OutputNoDirection m a = (Natural , a -> m a)
+
+buildCode :: CodeBuilder m l => Visitor -> Component -> InputPort
+                                -> ReaderT Env (Either ScanError) (ComProc m l a)
+buildCode visitor (Fix c) port =
   let (CC.CompactClosedCartesianMorphismF c') = c in
     case c' of
 
@@ -146,9 +153,61 @@ scanCom visitor (Fix c) port =
         Mo.Id x -> do
           (outbound,inbound) <- splitDuality' x
           case port of
-            LeftInputPort n | fromIntegral n < length outbound -> pure $ \[m] -> ComProc [m] []
-            RightInputPort n | fromIntegral n < length inbound -> pure $ \[m] -> ComProc [m] []
+            LeftInputPort n | fromIntegral n < length outbound -> pure $ ComProc [(RightOutputPort n , return)] []
+            RightInputPort n | fromIntegral n < length inbound -> pure $ ComProc [(LeftOutputPort n , return)] []
             _ -> throwError $ InvalidInputPort port
+        
+        Mo.Compose g h -> case port of
+          LeftInputPort _ -> do
+            (lOsG , rOsG , tsG) <- buildCode' g port
+            (lOsH , rOsH , tsH) <- buildCodes h LeftInputPort rOsG
+            (lOsI , rOsI , tsI) <- buildInnerInteraction lOsH
+            return $ ComProc ( (map leftOutput (lOsG ++ lOsH ++ lOsI)) ++ (map rightOutput (rOsG ++ rOsH ++ rOsI)) ) (tsG ++ tsH ++ tsI)
+
+          RightInputPort _ -> do
+            (lOsH , rOsH , tsH) <- buildCode' h port
+            (lOsG , rOsG , tsG) <- buildCodes g RightInputPort lOsH
+            (lOsI , rOsI , tsI) <- buildInnerInteraction rOsG
+            return $ ComProc ( (map leftOutput (lOsH ++ lOsG ++ lOsI)) ++ (map rightOutput (rOsH ++ rOsG ++ rOsI)) ) (tsH ++ tsG ++ tsI)
+
+          where
+            buildCode' component port' = do
+              ComProc (lOs,rOs) ts <- buildCode visitor component port'
+              return (lOs , rOs , ts)
+
+            buildCodes :: CodeBuilder m l => Component -> (Natural -> OutputPort) -> [OutputNoDirection m a] -> ReaderT Env (Either ScanError) ([OutputNoDirection m a] , [OutputNoDirection m a] , [a -> m ()])
+            buildCodes component director inputs = do
+              codes <- sequence $ map ((buildCode visitor component) . director . fst) inputs
+              let ts = concat $ map terminals codes
+              let (lOs , rOs) = partitionOutputs $ concat $ map outputs codes
+              return (lOs , rOs , ts)
+
+            buildInnerInteraction :: CodeBuilder m l => [OutputNoDirection m a] -> ReaderT Env (Either ScanError) ([OutputNoDirection m a] , [OutputNoDirection m a] , [a -> m ()])
+            buildInnerInteraction lOsH = do
+              (lOsG , rOsG , tsG) <- buildCodes g RightInputPort lOsH
+              (lOsH , rOsH , tsH) <- buildCodes h LeftInputPort rOsG
+              (lOsI , rOsI , tsI) <- buildInnerInteraction lOsH
+              return ( (lOsG ++ lOsI) , (rOsH ++ rOsI) , (tsG ++ tsH ++ tsI) )
+            buildInnerInteraction [] = pure $ ([],[],[])
+
+            leftOutput :: CodeBuilder m l => OutputNoDirection m a -> Output m a
+            leftOutput (op,code) = (LeftOutputPort op , code)
+
+            rightOutput :: CodeBuilder m l => OutputNoDirection m a -> Output m a
+            rightOutput (op,code) = (RightOutputPort op , code)
+
+            plusCodes (ComProc os ts) (ComProc os' ts') = ComProc (os++os') (ts++ts')
+
+            partitionOutputs :: CodeBuilder m l => [Output m a] -> ([OutputNoDirection m a] , [OutputNoDirection m a])
+            partitionOutputs =
+              partitionEithers .
+                map
+                  ( \(op,code) ->
+                      case op of
+                        LeftOutputPort n -> Left (n,code)
+                        RightOutputPort n -> Right (n,code)
+                  )
+
   where
     splitDuality' = (mapReaderT liftExpandTypeErr) . splitDuality
     flattenType' = (mapReaderT liftExpandTypeErr) . flattenType
