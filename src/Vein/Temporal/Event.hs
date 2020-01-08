@@ -172,7 +172,8 @@ buildCode visitor (Fix c) port =
 
           where
             buildCode' component port' = do
-              ComProc (lOs,rOs) ts <- buildCode visitor component port'
+              ComProc os ts <- buildCode visitor component port'
+              let (lOs , rOs) = partitionOutputs os
               return (lOs , rOs , ts)
 
             buildCodes :: CodeBuilder m l => Component -> (Natural -> OutputPort) -> [OutputNoDirection m a] -> ReaderT Env (Either ScanError) ([OutputNoDirection m a] , [OutputNoDirection m a] , [a -> m ()])
