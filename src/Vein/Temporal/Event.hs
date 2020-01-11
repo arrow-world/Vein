@@ -310,6 +310,12 @@ buildCode visitor (Fix c) port =
             return $ ComProc [] [(\x -> save v x >> goto l , LeftOutputPort n , label l >> load v)]
           
           _ -> throwError $ InvalidInputPort port
+      
+      Mo.Aug x -> do
+        (outbound,_) <- splitDuality' x
+        case port of
+          LeftInputPort n | n < (fromIntegral $ length outbound)  -> return $ ComProc [] []
+          _                                                       -> throwError $ InvalidInputPort port
 
   where
     id' x = do
