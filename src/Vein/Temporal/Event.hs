@@ -256,7 +256,18 @@ buildCode visitor (Fix c) port =
             (m,m') | n < m'             -> return $ ComProc [(LeftOutputPort $ m + n , return)] []
             (m,m') | m <= n && n < m+m' -> return $ ComProc [(LeftOutputPort $ n - m , return)] []
             _                           -> throwError $ InvalidInputPort port
+      
+      Mo.Cartesian (Ev x) -> do
+        (outbound,inbound) <- splitDuality' x
 
+        let lo = fromIntegral $ length outbound
+        let li = fromIntegral $ length inbound
+
+        case port of
+          LeftInputPort n | n < lo                -> return $ ComProc [(LeftOutputPort $ li + n, return)] []
+          LeftInputPort n | lo <= n && n < lo+li  -> return $ ComProc [(LeftOutputPort $ n - lo, return)] []
+          _                                       -> throwError $ InvalidInputPort port
+      
       Mo.Diag x -> do
         (outbound,inbound) <- splitDuality' x
 
