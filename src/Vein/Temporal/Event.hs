@@ -268,6 +268,32 @@ buildCode visitor (Fix c) port =
           LeftInputPort n | lo <= n && n < lo+li  -> return $ ComProc [(LeftOutputPort $ n - lo, return)] []
           _                                       -> throwError $ InvalidInputPort port
       
+      Mo.Cartesian (Cv x) -> do
+        (outbound,inbound) <- splitDuality' x
+
+        let li = fromIntegral $ length inbound
+        let lo = fromIntegral $ length outbound
+
+        case port of
+          RightInputPort n | n < li               -> return $ ComProc [(RightOutputPort $ lo + n, return)] []
+          RightInputPort n | li <= n && n < li+lo -> return $ ComProc [(RightOutputPort $ n - li, return)] []
+          _                                       -> throwError $ InvalidInputPort port
+        
+        {-
+          +-  cv  -+
+          |        |
+          |  +-----+--> X_outbound
+          |  |     |
+          |  | +---+--> X_inbound*
+          |  | |   |
+          |  | |   |
+          |  | +---+<-- X_inbound
+          |  |     |
+          |  +-----+<-- X_outbound*
+          |        |
+          +--------+
+        -}
+      
       Mo.Diag x -> do
         (outbound,inbound) <- splitDuality' x
 
