@@ -3,6 +3,8 @@
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE FunctionalDependencies #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Vein.Temporal.Event where
@@ -21,12 +23,14 @@ import qualified Vein.Core.Monoidal.CompactClosed as CC
 import qualified LLVM.AST as LA
 import qualified Data.Map.Lazy as Map
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
-import LLVM.IRBuilder.Monad ( MonadIRBuilder , block , emitBlockStart , fresh )
+import LLVM.IRBuilder.Monad ( MonadIRBuilder , block , emitBlockStart , fresh , IRBuilder )
 import LLVM.IRBuilder.Instruction ( br, condBr )
+import Control.Monad ((>>))
 import Control.Monad.State ( MonadFix )
 import Data.Foldable ( foldrM )
 import Control.Monad.Reader (Reader, ask, asks, runReader, ReaderT, mapReaderT)
-import Control.Monad.Except (throwError)
+import Control.Monad.Except (throwError, ExceptT (ExceptT))
+import Control.Monad.Trans.Class (lift)
 import qualified Data.Text as T
 import Data.Fix ( Fix (..) )
 import Data.Either ( partitionEithers )
@@ -104,7 +108,7 @@ require = fmap (M.readQN . T.pack)
   , "Temporal.Event.route"
   ]
 
-type ComponentF = CompactClosedCartesianMorphismF M.QN TypeValue
+type ComponentF = CompactClosedCartesianMorphismF Value TypeValue
 type Component = Fix ComponentF
 
 
@@ -119,13 +123,17 @@ compileCom :: MonadIRBuilder m => Component -> Reader Env (Either ScanError (Com
 compileCom = undefined
 
 
-class Monad m => CodeBuilder m label where
+class Monad m => CodeBuilder m label a | m -> label a where
   goto :: label -> m ()
   label :: label -> m ()
+  save :: label -> a -> m ()
+  load :: label -> m a
+  uniqueLabel :: m label
 
-instance MonadIRBuilder m => CodeBuilder m LA.Name where
+instance CodeBuilder IRBuilder LA.Name [Operand] where
   goto = br
   label = emitBlockStart
+  uniqueLabel = fresh
 
 data InputPort =
     LeftInputPort Natural
@@ -137,13 +145,15 @@ data OutputPort =
   | LeftOutputPort Natural
     deriving (Eq, Show)
 
-data CodeBuilder m l => ComProc m l a = ComProc { outputs :: [(OutputPort , a -> m a)] , terminals :: [a -> m ()] }
+data CodeBuilder m l a => ComProc m l a =
+  ComProc { outputs :: [(OutputPort , a -> m a)] , terminals :: [(a -> m (), OutputPort , m a)] }
 type Visitor = ()
 type Output m a = (OutputPort , a -> m a)
+type Terminal m a = (a -> m () , OutputPort , m a)
 type OutputNoDirection m a = (Natural , a -> m a)
 
-buildCode :: CodeBuilder m l => Visitor -> Component -> InputPort
-                                -> ReaderT Env (Either ScanError) (ComProc m l a)
+buildCode :: CodeBuilder m l a => Visitor -> Component -> InputPort
+                                    -> ReaderT Env (ExceptT ScanError m) (ComProc m l a)
 buildCode visitor (Fix c) port =
   let (CC.CompactClosedCartesianMorphismF c') = c in
     case c' of
@@ -171,35 +181,36 @@ buildCode visitor (Fix c) port =
             return $ ComProc ( (map leftOutput (lOsH ++ lOsG ++ lOsI)) ++ (map rightOutput (rOsH ++ rOsG ++ rOsI)) ) (tsH ++ tsG ++ tsI)
 
           where
+            buildCode' :: CodeBuilder m l a => Component -> InputPort -> ReaderT Env (ExceptT ScanError m) ([OutputNoDirection m a] , [OutputNoDirection m a] , [Terminal m a])
             buildCode' component port' = do
               ComProc os ts <- buildCode visitor component port'
               let (lOs , rOs) = partitionOutputs os
               return (lOs , rOs , ts)
 
-            buildCodes :: CodeBuilder m l => Component -> (Natural -> OutputPort) -> [OutputNoDirection m a] -> ReaderT Env (Either ScanError) ([OutputNoDirection m a] , [OutputNoDirection m a] , [a -> m ()])
+            buildCodes :: CodeBuilder m l a => Component -> (Natural -> InputPort) -> [OutputNoDirection m a] -> ReaderT Env (ExceptT ScanError m) ([OutputNoDirection m a] , [OutputNoDirection m a] , [Terminal m a])
             buildCodes component director inputs = do
               codes <- sequence $ map ((buildCode visitor component) . director . fst) inputs
               let ts = concat $ map terminals codes
               let (lOs , rOs) = partitionOutputs $ concat $ map outputs codes
               return (lOs , rOs , ts)
 
-            buildInnerInteraction :: CodeBuilder m l => [OutputNoDirection m a] -> ReaderT Env (Either ScanError) ([OutputNoDirection m a] , [OutputNoDirection m a] , [a -> m ()])
+            buildInnerInteraction :: CodeBuilder m l a => [OutputNoDirection m a] -> ReaderT Env (ExceptT ScanError m) ([OutputNoDirection m a] , [OutputNoDirection m a] , [Terminal m a])
+            buildInnerInteraction [] = pure $ ([],[],[])
             buildInnerInteraction lOsH = do
               (lOsG , rOsG , tsG) <- buildCodes g RightInputPort lOsH
               (lOsH , rOsH , tsH) <- buildCodes h LeftInputPort rOsG
               (lOsI , rOsI , tsI) <- buildInnerInteraction lOsH
               return ( (lOsG ++ lOsI) , (rOsH ++ rOsI) , (tsG ++ tsH ++ tsI) )
-            buildInnerInteraction [] = pure $ ([],[],[])
 
-            leftOutput :: CodeBuilder m l => OutputNoDirection m a -> Output m a
+            leftOutput :: CodeBuilder m l a => OutputNoDirection m a -> Output m a
             leftOutput (op,code) = (LeftOutputPort op , code)
 
-            rightOutput :: CodeBuilder m l => OutputNoDirection m a -> Output m a
+            rightOutput :: CodeBuilder m l a => OutputNoDirection m a -> Output m a
             rightOutput (op,code) = (RightOutputPort op , code)
 
             plusCodes (ComProc os ts) (ComProc os' ts') = ComProc (os++os') (ts++ts')
 
-            partitionOutputs :: CodeBuilder m l => [Output m a] -> ([OutputNoDirection m a] , [OutputNoDirection m a])
+            partitionOutputs :: CodeBuilder m l a => [Output m a] -> ([OutputNoDirection m a] , [OutputNoDirection m a])
             partitionOutputs =
               partitionEithers .
                 map
@@ -209,19 +220,71 @@ buildCode visitor (Fix c) port =
                         RightOutputPort n -> Right (n,code)
                   )
 
-  where
-    splitDuality' = (mapReaderT liftExpandTypeErr) . splitDuality
-    flattenType' = (mapReaderT liftExpandTypeErr) . flattenType
+        Mo.ProductM g h -> case port of
+          LeftInputPort n -> do
+            (outboundG,_) <- dom' g >>= splitDuality'
+            (outboundH,_) <- dom' h >>= splitDuality'
 
-    liftExpandTypeErr :: Either ExpandTypeError a -> Either ScanError a
-    liftExpandTypeErr = either (Left . ExpandTypeError) Right
+            case (fromIntegral $ length outboundG , fromIntegral $ length outboundH) of
+              (m,m') | n < m -> buildCode' g $ LeftInputPort n
+              (m,m') | m <= n && n < m+m' -> buildCode' h $ LeftInputPort $ n - m
+              _ -> throwError $ InvalidInputPort port
+
+          RightInputPort n -> do
+            (_,inboundG) <- cod' g >>= splitDuality'
+            (_,inboundH) <- cod' h >>= splitDuality'
+
+            case (fromIntegral $ length inboundG , fromIntegral $ length inboundH) of
+              (m,m') | n < m -> buildCode' g $ RightInputPort n
+              (m,m') | m <= n && n < m+m' -> buildCode' h $ RightInputPort $ n - m
+              _ -> throwError $ InvalidInputPort port
+
+      Mo.Diag x -> do
+        (outbound,inbound) <- splitDuality' x
+
+        let lo = fromIntegral $ length outbound
+        let li = fromIntegral $ length inbound
+
+        case port of
+          LeftInputPort n | n < lo ->
+            return $ ComProc [(RightOutputPort n , return) , (RightOutputPort $ lo + n , return)] []
+
+          RightInputPort n | fromIntegral n < li*2 -> do
+            l <- lift $ lift $ uniqueLabel
+            v <- lift $ lift $ uniqueLabel
+            return $ ComProc [] [(\x -> save v x >> goto l , LeftOutputPort n , label l >> load v)]
+          
+          _ -> throwError $ InvalidInputPort port
+
+  where
+    buildCode' = buildCode visitor
+
+    splitDuality' = liftExpandTypeErr . splitDuality
+    flattenType' = liftExpandTypeErr . flattenType
+
+    -- liftExpandTypeErr :: Monad m => ReaderT Env (Either ExpandTypeError) a -> ReaderT Env (ExceptT ScanError m) a
+    liftExpandTypeErr = mapReaderT $ ExceptT . return . either (Left . ExpandTypeError) Right
+
+    doco' = liftDoCoErr . doco
+    dom' = liftDoCoErr . dom
+    cod' = liftDoCoErr . cod
+
+    -- liftDoCoErr :: Monad m => Maybe a -> ReaderT Env (ExceptT ScanError m) a
+    liftDoCoErr = maybe (throwError DoCoError) return 
 
 data TypeValue =
     TypeValue { typeCtor :: M.QN , typeParams :: [C.Value] }
   deriving (Eq, Show)
 
+data Value =
+    Val { valCtor :: M.QN , valParams :: [C.Value] }
+  deriving (Eq, Show)
+
 type Type = CC.CompactClosedCartesianObject TypeValue
 
+doco = CC.docoCompactClosedCartesianMorphism docoVal
+dom = (fmap fst) . doco
+cod = (fmap snd) . doco
 
 flattenType :: Type -> ReaderT Env (Either ExpandTypeError) [CC.D TypeValue]
 flattenType x = Mo.flattenOb <$> expandType x
@@ -258,7 +321,7 @@ data ExpandTypeError =
   | Undefined
 
 
-docoVal :: C.Value -> Maybe (Type, Type)
+docoVal :: Value -> Maybe (Type, Type)
 docoVal = undefined
 
 
@@ -303,6 +366,6 @@ eventLoop ins outs com = do
 data CompileError
 
 data ScanError =
-    DoCoFnError
+    DoCoError
   | ExpandTypeError ExpandTypeError
   | InvalidInputPort InputPort

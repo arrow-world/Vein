@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 8bf6957ecb6939651cd03ec7bfea562a9f8a8f09d27ca1eab2bbdae2596d5d8f
+-- hash: a6edddca720895ec3cfa2b774d81f8f7bd69ba1b8e51785f9ac45b40e8bb8aaf
 
 name:           vein
 version:        0.1.0.0
@@ -50,6 +50,7 @@ library
     , mtl
     , prettyprinter
     , text
+    , transformers
   default-language: Haskell2010
 
 executable vein-exe
@@ -68,6 +69,7 @@ executable vein-exe
     , mtl
     , prettyprinter
     , text
+    , transformers
     , vein
   default-language: Haskell2010
 
@@ -88,5 +90,6 @@ test-suite vein-test
     , mtl
     , prettyprinter
     , text
+    , transformers
     , vein
   default-language: Haskell2010
