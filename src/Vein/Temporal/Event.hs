@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE DatatypeContexts #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Vein.Temporal.Event where
@@ -24,6 +25,7 @@ import qualified LLVM.AST as LA
 import qualified Data.Map.Lazy as Map
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
 import LLVM.IRBuilder.Monad ( MonadIRBuilder , block , emitBlockStart , fresh , IRBuilder )
+import LLVM.IRBuilder.Monad as LIM
 import LLVM.IRBuilder.Instruction ( br, condBr )
 import Control.Monad ((>>))
 import Control.Monad.State ( MonadFix )

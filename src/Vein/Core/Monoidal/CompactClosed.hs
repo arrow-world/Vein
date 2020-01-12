@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DatatypeContexts #-}
 
 module Vein.Core.Monoidal.CompactClosed where
 
@@ -62,6 +63,7 @@ type CompactClosedCartesian m o =
 newtype CompactClosedCartesianMorphismF m o r =
   CompactClosedCartesianMorphismF
     (CompactClosedCartesian (Monoidal.MorphismF m (D o) r) o)
+  deriving (Eq, Show)
 
 type CompactClosedCartesianMorphism m o =
   Fix (CompactClosedCartesianMorphismF m o)
