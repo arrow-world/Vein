@@ -5,7 +5,10 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE DatatypeContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE RankNTypes #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Vein.Temporal.Event where
@@ -28,15 +31,17 @@ import LLVM.IRBuilder.Monad ( MonadIRBuilder , block , emitBlockStart , fresh , 
 import LLVM.IRBuilder.Monad as LIM
 import LLVM.IRBuilder.Instruction ( br, condBr )
 import Control.Monad ((>>))
-import Control.Monad.State ( MonadFix )
+import Control.Monad.State ( State , modify , get , runState , MonadFix )
 import Data.Foldable ( foldrM )
 import Control.Monad.Reader (Reader, ask, asks, runReader, ReaderT, mapReaderT)
 import Control.Monad.Except (throwError, ExceptT (ExceptT))
 import Control.Monad.Trans.Class (lift)
 import qualified Data.Text as T
-import Data.Fix ( Fix (..) )
+import Data.Fix ( Fix (..), cataM )
 import Data.Either ( partitionEithers )
 import Numeric.Natural ( Natural )
+import Control.Arrow (arr, Kleisli, (>>>), (&&&), (+++))
+import qualified Control.Category as Category
 
 {-
  - type Event : Type -> Type
@@ -113,6 +118,9 @@ require = fmap (M.readQN . T.pack)
 type ComponentF = CompactClosedCartesianMorphismF Value TypeValue
 type Component = Fix ComponentF
 
+newtype ComponentNumberedF r = ComponentNumberedF (ComponentF r, Maybe Natural)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
+type ComponentNumbered = Fix ComponentNumberedF
 
 data Definition =
     DefComponent ([C.Value] -> Component)
@@ -121,21 +129,23 @@ data Definition =
 type Env = M.ModuleMap Definition
 
 
-compileCom :: MonadIRBuilder m => Component -> Reader Env (Either ScanError (ComProc m LA.Name [Operand]))
-compileCom = undefined
+-- compileCom :: MonadIRBuilder m => Component -> Reader Env (Either ScanError (ComProc m LA.Name [Operand]))
+-- compileCom = undefined
 
+{-
+data JumpableCodeBuilder mBuilder mCode a = JumpableCodeBuilder
+  { jump :: (a -> mCode a) -> mCode a -> mBuilder (mCode a , mCode ())
+  }
 
-class Monad m => CodeBuilder m label a | m -> label a where
-  goto :: label -> m ()
-  label :: label -> m ()
-  save :: label -> a -> m ()
-  load :: label -> m a
-  uniqueLabel :: m label
-
-instance CodeBuilder IRBuilder LA.Name [Operand] where
-  goto = br
-  label = emitBlockStart
-  uniqueLabel = fresh
+llvmJumpCodeBuilder :: (MonadIRBuilder m, MonadIRBuilder m') => JumpableCodeBuilder m m' [Operand]
+llvmJumpCodeBuilder = JumpbleCodeBuilder
+  { jump = \cont ctx -> do
+      xs <- ctx
+      label <- block
+      ys <- cont xs
+      return $ (  , br label )
+  }
+-}
 
 data InputPort =
     LeftInputPort Natural
@@ -147,15 +157,16 @@ data OutputPort =
   | LeftOutputPort Natural
     deriving (Eq, Show)
 
-data CodeBuilder m l a => ComProc m l a =
+{-
+data MonadCodeBuilder m a => ComProc m a =
   ComProc { outputs :: [(OutputPort , a -> m a)] , terminals :: [(a -> m (), OutputPort , m a)] }
-type Visitor m l a = Value -> ReaderT Env (ExceptT ScanError m) (ComProc m l a)
+type Visitor m a = Value -> ReaderT Env (ExceptT ScanError m) (ComProc m a)
 type Output m a = (OutputPort , a -> m a)
 type Terminal m a = (a -> m () , OutputPort , m a)
 type OutputNoDirection m a = (Natural , a -> m a)
 
-buildCode :: CodeBuilder m l a => Visitor m l a -> Component -> InputPort
-                                    -> ReaderT Env (ExceptT ScanError m) (ComProc m l a)
+buildCode :: MonadCodeBuilder m a => Visitor m a -> Component -> InputPort
+                                    -> ReaderT Env (ExceptT ScanError m) (ComProc m a)
 buildCode visitor (Fix c) port =
   let (CC.CompactClosedCartesianMorphismF c') = c in
     case c' of
@@ -341,6 +352,30 @@ buildCode visitor (Fix c) port =
 
     -- liftDoCoErr :: Monad m => Maybe a -> ReaderT Env (ExceptT ScanError m) a
     liftDoCoErr = maybe (throwError DoCoError) return 
+-}
+
+
+newtype Counter a = Counter (State Natural a)
+  deriving (Functor, Applicative, Monad)
+
+count :: Counter Natural
+count = Counter $ get <* modify (+1)
+
+runCounter :: Counter a -> (a , Natural)
+runCounter (Counter m) = runState m 0
+
+numbering :: Component -> Counter ComponentNumbered
+numbering (Fix c) =
+  let CC.CompactClosedCartesianMorphismF m = c in
+    case m of
+      Mo.Diag x -> do
+        n <- count
+        c' <- traverse numbering c
+        return $ Fix $ ComponentNumberedF (c' , Just n)
+      
+      _ -> do
+        c' <- traverse numbering c
+        return $ Fix $ ComponentNumberedF (c' , Nothing)
 
 data TypeValue =
     TypeValue { typeCtor :: M.QN , typeParams :: [C.Value] }
