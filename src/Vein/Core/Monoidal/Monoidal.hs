@@ -89,14 +89,14 @@ docoMorphismF docoM docoR f =
     Morphism g    -> docoM g
 
 
-data Braided m o =
+data Braided o m =
     Braided m
   | Braid (Object o) (Object o)
     deriving (Eq, Functor, Show)
 
 docoBraided ::  Applicative f =>
                       (m -> f (Object o, Object o))
-                  ->  Braided m o
+                  ->  Braided o m
                   ->  f (Object o, Object o)
 docoBraided docoM f =
   case f of
@@ -104,7 +104,7 @@ docoBraided docoM f =
     Braid x y -> pure (x >< y , y >< x)
 
 
-data Cartesian m o =
+data Cartesian o m =
     Cartesian m
   | Diag (Object o)
   | Aug (Object o)
@@ -112,7 +112,7 @@ data Cartesian m o =
 
 docoCartesian ::  Applicative f =>
                       (m -> f (Object o, Object o))
-                  ->  Cartesian m o
+                  ->  Cartesian o m
                   ->  f (Object o, Object o)
 docoCartesian docoM f =
   case f of
@@ -141,7 +141,7 @@ instance WithInternalHom (WI o) where
 
 
 type CartesianClosedBraidedCartesian m o =
-  (CartesianClosed (Cartesian (Braided m (WI o)) (WI o)) (WI o))
+  (CartesianClosed (Cartesian (WI o) (Braided (WI o) m)) (WI o))
 
 newtype CartesianClosedBraidedCartesianMorphismF m o r =
   CartesianClosedBraidedCartesianMorphismF

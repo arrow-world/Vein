@@ -31,7 +31,7 @@ import Data.Fix
 assignBraided ::  (Monad f, Monad g) =>
                         (m -> f ([a] -> g [a]))
                     ->  (m -> f (Object o, Object o))
-                    ->  Braided m o
+                    ->  Braided o m
                     ->  f ([a] -> g [a])
 assignBraided assignM doco m =
   case m of
@@ -41,7 +41,7 @@ assignBraided assignM doco m =
 assignCartesian ::  (Monad f, Monad g) =>
                           (m -> f ([a] -> g [a]))
                       ->  (m -> f (Object o, Object o))
-                      ->  Cartesian m o
+                      ->  Cartesian o m
                       ->  f ([a] -> g [a])
 assignCartesian f doco m =
   case m of

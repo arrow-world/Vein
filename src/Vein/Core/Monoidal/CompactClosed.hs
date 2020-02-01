@@ -25,11 +25,11 @@ instance DualityObject (D a) where
   dual = Dual
 
 
-data DualityObject o => DualityM m o =
+data DualityObject o => DualityM o m =
     DualityM m
   | Ev (Monoidal.Object o)
   | Cv (Monoidal.Object o)
-    deriving (Eq, Show)
+    deriving (Eq, Show, Functor)
 
 
 data DI o =
@@ -47,7 +47,7 @@ instance Monoidal.WithInternalHom (DI a) where
 
 docoDualityM :: (Applicative f, DualityObject o) =>
                       (m -> f (Object o, Object o))
-                  ->  DualityM m o
+                  ->  DualityM o m
                   ->  f (Object o, Object o)
 docoDualityM docoM f =
   case f of
@@ -57,13 +57,13 @@ docoDualityM docoM f =
 
 type CompactClosedCartesianObject o = Object (D o)
 
-type CompactClosedCartesian m o =
-  Monoidal.Cartesian (DualityM (Monoidal.Braided m (D o)) (D o)) (D o)
+type CompactClosedCartesian o m =
+  Monoidal.Cartesian (D o) (DualityM (D o) (Monoidal.Braided (D o) m))
 
 newtype CompactClosedCartesianMorphismF m o r =
   CompactClosedCartesianMorphismF
-    (CompactClosedCartesian (Monoidal.MorphismF m (D o) r) o)
-  deriving (Eq, Show)
+    (CompactClosedCartesian o (Monoidal.MorphismF m (D o) r))
+  deriving (Eq, Show, Functor)
 
 type CompactClosedCartesianMorphism m o =
   Fix (CompactClosedCartesianMorphismF m o)
