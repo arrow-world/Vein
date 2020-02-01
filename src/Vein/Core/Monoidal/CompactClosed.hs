@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -29,7 +30,7 @@ data DualityObject o => DualityM o m =
     DualityM m
   | Ev (Monoidal.Object o)
   | Cv (Monoidal.Object o)
-    deriving (Eq, Show, Functor)
+    deriving (Eq, Show, Functor, Foldable, Traversable)
 
 
 data DI o =
@@ -63,7 +64,7 @@ type CompactClosedCartesian o m =
 newtype CompactClosedCartesianMorphismF m o r =
   CompactClosedCartesianMorphismF
     (CompactClosedCartesian o (Monoidal.MorphismF m (D o) r))
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Show, Functor, Foldable, Traversable)
 
 type CompactClosedCartesianMorphism m o =
   Fix (CompactClosedCartesianMorphismF m o)

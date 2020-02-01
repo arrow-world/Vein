@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DatatypeContexts #-}
@@ -60,7 +61,7 @@ data MorphismF m a r =
   | Assoc (Object a) (Object a) (Object a)
   | Unassoc (Object a) (Object a) (Object a)
   | Morphism m
-    deriving (Eq, Functor, Show)
+    deriving (Eq, Functor, Show, Foldable, Traversable)
 
 docoMorphismF ::  Monad f =>
                         (m -> f (Object a, Object a))
@@ -92,7 +93,7 @@ docoMorphismF docoM docoR f =
 data Braided o m =
     Braided m
   | Braid (Object o) (Object o)
-    deriving (Eq, Functor, Show)
+    deriving (Eq, Functor, Show, Foldable, Traversable)
 
 docoBraided ::  Applicative f =>
                       (m -> f (Object o, Object o))
@@ -108,7 +109,7 @@ data Cartesian o m =
     Cartesian m
   | Diag (Object o)
   | Aug (Object o)
-    deriving (Eq, Functor, Show)
+    deriving (Eq, Functor, Show, Foldable, Traversable)
 
 docoCartesian ::  Applicative f =>
                       (m -> f (Object o, Object o))
