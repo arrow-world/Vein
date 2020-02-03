@@ -40,7 +40,7 @@ import qualified Data.Text as T
 import Data.Fix ( Fix (..), cataM )
 import Data.Either ( partitionEithers )
 import Numeric.Natural ( Natural )
-import Control.Arrow (arr, Kleisli, (>>>), (&&&), (+++))
+import Control.Arrow (arr, Kleisli, (>>>), (&&&), (+++), (***))
 import qualified Control.Category as Category
 
 {-
@@ -129,16 +129,21 @@ data Definition =
 type Env = M.ModuleMap Definition
 
 
--- compileCom :: MonadIRBuilder m => Component -> Reader Env (Either ScanError (ComProc m LA.Name [Operand]))
+-- compileCom :: MonadIRBuilder m => Component -> Reader Env (Either ScanError (PreCode m LA.Name [Operand]))
 -- compileCom = undefined
 
-{-
-data JumpableCodeBuilder mBuilder mCode a = JumpableCodeBuilder
-  { jump :: (a -> mCode a) -> mCode a -> mBuilder (mCode a , mCode ())
-  }
+type EndoKleisli m a = a -> m a
+type EKTerminator m a = a -> m ()
 
-llvmJumpCodeBuilder :: (MonadIRBuilder m, MonadIRBuilder m') => JumpableCodeBuilder m m' [Operand]
-llvmJumpCodeBuilder = JumpbleCodeBuilder
+{-
+composeEKSeq :: EKSeq m a -> EndoKleisli m a
+composeEKSeq (x:xs) = x >>= composeEKSeq xs
+
+data JumpableCodeBuilder mBuilder mCode a = JumpableCodeBuilder
+  { jump :: EndoKleisli mCode a -> mCode a -> mBuilder (EndoKleisli mCode a , mCode ()) }
+
+llvmJumpableCodeBuilder :: (MonadIRBuilder m, MonadIRBuilder m') => JumpableCodeBuilder m m' [Operand]
+llvmJumpableCodeBuilder = JumpbleCodeBuilder
   { jump = \cont ctx -> do
       xs <- ctx
       label <- block
@@ -150,24 +155,74 @@ llvmJumpCodeBuilder = JumpbleCodeBuilder
 data InputPort =
     LeftInputPort Natural
   | RightInputPort Natural
-    deriving (Eq, Show)
+    deriving (Eq, Show, Ord)
+
+inputPortNo :: InputPort -> Natural
+inputPortNo (LeftInputPort n) = n
+inputPortNo (RightInputPort n) = n
 
 data OutputPort =
     RightOutputPort Natural
   | LeftOutputPort Natural
-    deriving (Eq, Show)
+    deriving (Eq, Show, Ord)
 
-{-
-data MonadCodeBuilder m a => ComProc m a =
-  ComProc { outputs :: [(OutputPort , a -> m a)] , terminals :: [(a -> m (), OutputPort , m a)] }
-type Visitor m a = Value -> ReaderT Env (ExceptT ScanError m) (ComProc m a)
+outputPortNo :: OutputPort -> Natural
+outputPortNo (LeftOutputPort n) = n
+outputPortNo (RightOutputPort n) = n
+
+
+data JunctionPoint = JunctionPoint { jpMorphismId :: Natural , jpPort :: OutputPort }
+  deriving (Eq, Show)
+
+data EKSeq m a =
+    EksSnocEK (EKSeq m a) (EndoKleisli m a)
+  | EksSnocMerge (EKSeq m a) JunctionPoint
+  | EksForkStart JunctionPoint
+  | EksNil
+
+hasJunction :: JunctionPoint -> EKSeq m a -> Bool
+hasJunction jp eks = case eks of
+  EksSnocEK eks' _ -> hasJunction jp eks'
+  EksSnocMerge eks' jp' -> jp == jp' || hasJunction jp eks'
+  EksForkStart _ -> False
+  EksNil -> False
+
+data PreCodeFragment m a =
+    PcfEnd (EKSeq m a)
+  | PcfFork (EKSeq m a) JunctionPoint
+  | PcfMerge (EKSeq m a) JunctionPoint
+
+data PreCode m a =
+  PreCode { pcOutput :: EKSeq m a
+          , pcOutputPort :: OutputPort
+          , pcTerminals :: [PreCodeFragment m a]
+          }
+
+data PreCodes m a =
+  PreCodes  { pcsOutputs :: [(OutputPort , EKSeq m a)]
+            , pcsTerminals :: [PreCodeFragment m a]
+            }
+
+instance Semigroup (PreCodes m a) where
+  x <> y = PreCodes (pcsOutputs x ++ pcsOutputs y) (pcsTerminals x ++ pcsTerminals y)
+
+instance Monoid (PreCodes m a) where
+  mempty = PreCodes { pcsOutputs = [] , pcsTerminals = [] }
+
+singletonPreCodes :: PreCode m a -> PreCodes m a
+singletonPreCodes (PreCode o p ts) = PreCodes [(p,o)] ts
+
+appendPreCode :: PreCodes m a -> PreCode m a -> PreCodes m a
+appendPreCode xs x = xs <> singletonPreCodes x
+
+
+type Visitor m a = Value -> InputPort -> ReaderT Env (Either ScanError) [(OutputPort , EndoKleisli m a)]
 type Output m a = (OutputPort , a -> m a)
 type Terminal m a = (a -> m () , OutputPort , m a)
 type OutputNoDirection m a = (Natural , a -> m a)
 
-buildCode :: MonadCodeBuilder m a => Visitor m a -> Component -> InputPort
-                                    -> ReaderT Env (ExceptT ScanError m) (ComProc m a)
-buildCode visitor (Fix c) port =
+buildPreCode :: Visitor m a -> PreCode m a -> Component -> InputPort -> ReaderT Env (Either ScanError) (PreCodes m a)
+buildPreCode visitor initCode (Fix c) port =
   let (CC.CompactClosedCartesianMorphismF c') = c in
     case c' of
 
@@ -177,55 +232,46 @@ buildCode visitor (Fix c) port =
         
         Mo.Compose g h -> case port of
           LeftInputPort _ -> do
-            (lOsG , rOsG , tsG) <- buildCode' g port
-            (lOsH , rOsH , tsH) <- buildCodes h LeftInputPort rOsG
+            (lOsG , rOsG , tsG) <- buildPreCode'' g port
+            (lOsH , rOsH , tsH) <- buildPreCodes h LeftInputPort rOsG
             (lOsI , rOsI , tsI) <- buildInnerInteraction lOsH
-            return $ ComProc ( (map leftOutput (lOsG ++ lOsH ++ lOsI)) ++ (map rightOutput (rOsG ++ rOsH ++ rOsI)) ) (tsG ++ tsH ++ tsI)
+            return $ PreCodes ( (map leftOutput (lOsG ++ lOsH ++ lOsI)) ++ (map rightOutput (rOsG ++ rOsH ++ rOsI)) ) (tsG ++ tsH ++ tsI)
 
           RightInputPort _ -> do
-            (lOsH , rOsH , tsH) <- buildCode' h port
-            (lOsG , rOsG , tsG) <- buildCodes g RightInputPort lOsH
+            (lOsH , rOsH , tsH) <- buildPreCode'' h port
+            (lOsG , rOsG , tsG) <- buildPreCodes g RightInputPort lOsH
             (lOsI , rOsI , tsI) <- buildInnerInteraction rOsG
-            return $ ComProc ( (map leftOutput (lOsH ++ lOsG ++ lOsI)) ++ (map rightOutput (rOsH ++ rOsG ++ rOsI)) ) (tsH ++ tsG ++ tsI)
+            return $ PreCodes ( (map leftOutput (lOsH ++ lOsG ++ lOsI)) ++ (map rightOutput (rOsH ++ rOsG ++ rOsI)) ) (tsH ++ tsG ++ tsI)
 
           where
-            -- buildCode' :: CodeBuilder m l a => Component -> InputPort -> ReaderT Env (ExceptT ScanError m) ([OutputNoDirection m a] , [OutputNoDirection m a] , [Terminal m a])
-            buildCode' component port' = do
-              ComProc os ts <- buildCode visitor component port'
+            buildPreCode'' component port' = do
+              PreCodes os ts <- buildPreCode' component port'
               let (lOs , rOs) = partitionOutputs os
               return (lOs , rOs , ts)
 
-            -- buildCodes :: CodeBuilder m l a => Component -> (Natural -> InputPort) -> [OutputNoDirection m a] -> ReaderT Env (ExceptT ScanError m) ([OutputNoDirection m a] , [OutputNoDirection m a] , [Terminal m a])
-            buildCodes component director inputs = do
-              codes <- sequence $ map ((buildCode visitor component) . director . fst) inputs
-              let ts = concat $ map terminals codes
-              let (lOs , rOs) = partitionOutputs $ concat $ map outputs codes
+            buildPreCodes component director inputs = do
+              codes <- sequence $ map ((buildPreCode' component) . director . fst) inputs
+              let ts = concat $ map pcsTerminals codes
+              let (lOs , rOs) = partitionOutputs $ concat $ map pcsOutputs codes
               return (lOs , rOs , ts)
 
-            -- buildInnerInteraction :: CodeBuilder m l a => [OutputNoDirection m a] -> ReaderT Env (ExceptT ScanError m) ([OutputNoDirection m a] , [OutputNoDirection m a] , [Terminal m a])
             buildInnerInteraction [] = pure $ ([],[],[])
             buildInnerInteraction lOsH = do
-              (lOsG , rOsG , tsG) <- buildCodes g RightInputPort lOsH
-              (lOsH , rOsH , tsH) <- buildCodes h LeftInputPort rOsG
+              (lOsG , rOsG , tsG) <- buildPreCodes g RightInputPort lOsH
+              (lOsH , rOsH , tsH) <- buildPreCodes h LeftInputPort rOsG
               (lOsI , rOsI , tsI) <- buildInnerInteraction lOsH
               return ( (lOsG ++ lOsI) , (rOsH ++ rOsI) , (tsG ++ tsH ++ tsI) )
 
-            -- leftOutput :: CodeBuilder m l a => OutputNoDirection m a -> Output m a
             leftOutput (op,code) = (LeftOutputPort op , code)
 
-            -- rightOutput :: CodeBuilder m l a => OutputNoDirection m a -> Output m a
             rightOutput (op,code) = (RightOutputPort op , code)
 
-            plusCodes (ComProc os ts) (ComProc os' ts') = ComProc (os++os') (ts++ts')
-
-            -- partitionOutputs :: CodeBuilder m l a => [Output m a] -> ([OutputNoDirection m a] , [OutputNoDirection m a])
             partitionOutputs =
               partitionEithers .
                 map
-                  ( \(op,code) ->
-                      case op of
-                        LeftOutputPort n -> Left (n,code)
-                        RightOutputPort n -> Right (n,code)
+                  ( \(op,eks) ->  case op of
+                                    LeftOutputPort n -> Left (n , eks)
+                                    RightOutputPort n -> Right (n , eks)
                   )
 
         Mo.ProductM g h -> case port of
@@ -234,8 +280,8 @@ buildCode visitor (Fix c) port =
             (outboundH,_) <- dom' h >>= splitDuality'
 
             case (fromIntegral $ length outboundG , fromIntegral $ length outboundH) of
-              (m,m') | n < m -> buildCode' g $ LeftInputPort n
-              (m,m') | m <= n && n < m+m' -> buildCode' h $ LeftInputPort $ n - m
+              (m,m') | n < m -> buildPreCode' g $ LeftInputPort n
+              (m,m') | m <= n && n < m+m' -> buildPreCode' h $ LeftInputPort $ n - m
               _ -> throwError $ InvalidInputPort port
 
           RightInputPort n -> do
@@ -243,8 +289,8 @@ buildCode visitor (Fix c) port =
             (_,inboundH) <- cod' h >>= splitDuality'
 
             case (fromIntegral $ length inboundG , fromIntegral $ length inboundH) of
-              (m,m') | n < m -> buildCode' g $ RightInputPort n
-              (m,m') | m <= n && n < m+m' -> buildCode' h $ RightInputPort $ n - m
+              (m,m') | n < m -> buildPreCode' g $ RightInputPort n
+              (m,m') | m <= n && n < m+m' -> buildPreCode' h $ RightInputPort $ n - m
               _ -> throwError $ InvalidInputPort port
           
         Mo.UnitorL x -> id' x
@@ -253,7 +299,9 @@ buildCode visitor (Fix c) port =
         Mo.UnunitorR x -> id' x
         Mo.Assoc x y z -> id' ((x >< y) >< z)
         Mo.Unassoc x y z -> id' ((x >< y) >< z)
-        Mo.Morphism val -> visitor val
+        Mo.Morphism val -> do
+          os <- visitor val port
+          return $ PreCodes (map (fmap $ EksSnocEK $ pcOutput initCode) os) (pcTerminals initCode)
       
       Mo.Cartesian (DualityM (Mo.Braid x y)) -> do
         (outboundX,inboundX) <- splitDuality' x
@@ -261,13 +309,13 @@ buildCode visitor (Fix c) port =
 
         case port of
           LeftInputPort n -> case (fromIntegral $ length outboundX , fromIntegral $ length outboundY) of
-            (m,m') | n < m'             -> return $ ComProc [(RightOutputPort $ m + n , return)] []
-            (m,m') | m <= n && n < m+m' -> return $ ComProc [(RightOutputPort $ n - m , return)] []
+            (m,m') | n < m'             -> return $ outputFrom $ RightOutputPort $ m + n
+            (m,m') | m <= n && n < m+m' -> return $ outputFrom $ RightOutputPort $ n - m
             _                           -> throwError $ InvalidInputPort port
 
           RightInputPort n -> case (fromIntegral $ length inboundX , fromIntegral $ length inboundY) of
-            (m,m') | n < m'             -> return $ ComProc [(LeftOutputPort $ m + n , return)] []
-            (m,m') | m <= n && n < m+m' -> return $ ComProc [(LeftOutputPort $ n - m , return)] []
+            (m,m') | n < m'             -> return $ outputFrom $ LeftOutputPort $ m + n
+            (m,m') | m <= n && n < m+m' -> return $ outputFrom $ LeftOutputPort $ n - m
             _                           -> throwError $ InvalidInputPort port
       
       Mo.Cartesian (Ev x) -> do
@@ -277,8 +325,8 @@ buildCode visitor (Fix c) port =
         let li = fromIntegral $ length inbound
 
         case port of
-          LeftInputPort n | n < lo                -> return $ ComProc [(LeftOutputPort $ li + n, return)] []
-          LeftInputPort n | lo <= n && n < lo+li  -> return $ ComProc [(LeftOutputPort $ n - lo, return)] []
+          LeftInputPort n | n < lo                -> return $ outputFrom $ LeftOutputPort $ li + n
+          LeftInputPort n | lo <= n && n < lo+li  -> return $ outputFrom $ LeftOutputPort $ n - lo
           _                                       -> throwError $ InvalidInputPort port
       
       Mo.Cartesian (Cv x) -> do
@@ -288,8 +336,8 @@ buildCode visitor (Fix c) port =
         let lo = fromIntegral $ length outbound
 
         case port of
-          RightInputPort n | n < li               -> return $ ComProc [(RightOutputPort $ lo + n, return)] []
-          RightInputPort n | li <= n && n < li+lo -> return $ ComProc [(RightOutputPort $ n - li, return)] []
+          RightInputPort n | n < li               -> return $ outputFrom $ RightOutputPort $ lo + n
+          RightInputPort n | li <= n && n < li+lo -> return $ outputFrom $ RightOutputPort $ n - li
           _                                       -> throwError $ InvalidInputPort port
         
         {-
@@ -315,44 +363,52 @@ buildCode visitor (Fix c) port =
 
         case port of
           LeftInputPort n | n < lo ->
-            return $ ComProc [(RightOutputPort n , return) , (RightOutputPort $ lo + n , return)] []
+            return $ PreCodes [ ( RightOutputPort n        , EksForkStart jp )
+                              , ( RightOutputPort $ lo + n , EksForkStart jp )
+                              ]
+                              $ PcfFork (pcOutput initCode) jp : pcTerminals initCode
 
-          RightInputPort n | fromIntegral n < li*2 -> do
-            l <- lift $ lift $ uniqueLabel
-            v <- lift $ lift $ uniqueLabel
-            return $ ComProc [] [(\x -> save v x >> goto l , LeftOutputPort n , label l >> load v)]
+          RightInputPort n | fromIntegral n < li*2 ->
+              if hasJunction jp (pcOutput initCode) then
+                return $ PreCodes [(op , EksSnocMerge (pcOutput initCode) jp)] $ pcTerminals initCode
+              else
+                return $ PreCodes [] $ PcfMerge (pcOutput initCode) jp : pcTerminals initCode
+            where
+              op = LeftOutputPort (n `mod` li)
           
           _ -> throwError $ InvalidInputPort port
+        where
+          jp = undefined
       
       Mo.Aug x -> do
         (outbound,_) <- splitDuality' x
         case port of
-          LeftInputPort n | n < (fromIntegral $ length outbound)  -> return $ ComProc [] []
+          LeftInputPort n | n < (fromIntegral $ length outbound)  ->
+            return $ PreCodes [] $ pcTerminals initCode ++ [PcfEnd $ pcOutput initCode]
           _                                                       -> throwError $ InvalidInputPort port
 
   where
     id' x = do
       (outbound,inbound) <- splitDuality' x
       case port of
-        LeftInputPort n | fromIntegral n < length outbound -> pure $ ComProc [(RightOutputPort n , return)] []
-        RightInputPort n | fromIntegral n < length inbound -> pure $ ComProc [(LeftOutputPort n , return)] []
+        LeftInputPort n | fromIntegral n < length outbound -> pure $ outputFrom $ RightOutputPort n
+        RightInputPort n | fromIntegral n < length inbound -> pure $ outputFrom $ LeftOutputPort n
         _ -> throwError $ InvalidInputPort port
+    
+    outputFrom op = singletonPreCodes $ initCode { pcOutputPort = op }
 
-    buildCode' = buildCode visitor
+    buildPreCode' = buildPreCode visitor initCode
 
     splitDuality' = liftExpandTypeErr . splitDuality
     flattenType' = liftExpandTypeErr . flattenType
 
-    -- liftExpandTypeErr :: Monad m => ReaderT Env (Either ExpandTypeError) a -> ReaderT Env (ExceptT ScanError m) a
-    liftExpandTypeErr = mapReaderT $ ExceptT . return . either (Left . ExpandTypeError) Right
+    liftExpandTypeErr = mapReaderT $ either (Left . ExpandTypeError) Right
 
     doco' = liftDoCoErr . doco
     dom' = liftDoCoErr . dom
     cod' = liftDoCoErr . cod
 
-    -- liftDoCoErr :: Monad m => Maybe a -> ReaderT Env (ExceptT ScanError m) a
     liftDoCoErr = maybe (throwError DoCoError) return 
--}
 
 
 newtype Counter a = Counter (State Natural a)
