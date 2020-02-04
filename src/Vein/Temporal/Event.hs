@@ -37,7 +37,7 @@ import Control.Monad.Reader (Reader, ask, asks, runReader, ReaderT, mapReaderT)
 import Control.Monad.Except (throwError, ExceptT (ExceptT))
 import Control.Monad.Trans.Class (lift)
 import qualified Data.Text as T
-import Data.Fix ( Fix (..), cataM )
+import Data.Fix ( Fix (..), cata )
 import Data.Either ( partitionEithers )
 import Numeric.Natural ( Natural )
 import Control.Arrow (arr, Kleisli, (>>>), (&&&), (+++), (***))
@@ -118,7 +118,7 @@ require = fmap (M.readQN . T.pack)
 type ComponentF = CompactClosedCartesianMorphismF Value TypeValue
 type Component = Fix ComponentF
 
-newtype ComponentNumberedF r = ComponentNumberedF (ComponentF r, Maybe Natural)
+data ComponentNumberedF r = ComponentNumberedF { cnComponent :: ComponentF r , cnId :: Maybe Natural }
   deriving (Eq, Show, Functor, Foldable, Traversable)
 type ComponentNumbered = Fix ComponentNumberedF
 
@@ -171,7 +171,7 @@ outputPortNo (LeftOutputPort n) = n
 outputPortNo (RightOutputPort n) = n
 
 
-data JunctionPoint = JunctionPoint { jpMorphismId :: Natural , jpPort :: OutputPort }
+data JunctionPoint = JunctionPoint { jpMorphismId :: Natural , jpLeftPort :: Natural }
   deriving (Eq, Show)
 
 data EKSeq m a =
@@ -221,9 +221,9 @@ type Output m a = (OutputPort , a -> m a)
 type Terminal m a = (a -> m () , OutputPort , m a)
 type OutputNoDirection m a = (Natural , a -> m a)
 
-buildPreCode :: Visitor m a -> PreCode m a -> Component -> InputPort -> ReaderT Env (Either ScanError) (PreCodes m a)
+buildPreCode :: Visitor m a -> PreCode m a -> ComponentNumbered -> InputPort -> ReaderT Env (Either ScanError) (PreCodes m a)
 buildPreCode visitor initCode (Fix c) port =
-  let (CC.CompactClosedCartesianMorphismF c') = c in
+  let ComponentNumberedF (CC.CompactClosedCartesianMorphismF c') morphismId = c in
     case c' of
 
       Mo.Cartesian (CC.DualityM (Mo.Braided f)) -> case f of
@@ -367,6 +367,8 @@ buildPreCode visitor initCode (Fix c) port =
                               , ( RightOutputPort $ lo + n , EksForkStart jp )
                               ]
                               $ PcfFork (pcOutput initCode) jp : pcTerminals initCode
+            where
+              jp = jp' n
 
           RightInputPort n | fromIntegral n < li*2 ->
               if hasJunction jp (pcOutput initCode) then
@@ -374,11 +376,14 @@ buildPreCode visitor initCode (Fix c) port =
               else
                 return $ PreCodes [] $ PcfMerge (pcOutput initCode) jp : pcTerminals initCode
             where
-              op = LeftOutputPort (n `mod` li)
+              op = LeftOutputPort n'
+              jp = jp' n'
+              n' = n `mod` li
           
           _ -> throwError $ InvalidInputPort port
         where
-          jp = undefined
+          jp' = JunctionPoint morphismId'
+            where Just morphismId' = morphismId
       
       Mo.Aug x -> do
         (outbound,_) <- splitDuality' x
@@ -427,11 +432,11 @@ numbering (Fix c) =
       Mo.Diag x -> do
         n <- count
         c' <- traverse numbering c
-        return $ Fix $ ComponentNumberedF (c' , Just n)
+        return $ Fix $ ComponentNumberedF c' (Just n)
       
       _ -> do
         c' <- traverse numbering c
-        return $ Fix $ ComponentNumberedF (c' , Nothing)
+        return $ Fix $ ComponentNumberedF c' Nothing
 
 data TypeValue =
     TypeValue { typeCtor :: M.QN , typeParams :: [C.Value] }
@@ -443,7 +448,7 @@ data Value =
 
 type Type = CC.CompactClosedCartesianObject TypeValue
 
-doco = CC.docoCompactClosedCartesianMorphism docoVal
+doco = cata $ CC.docoCompactClosedCartesianMorphismF docoVal id . cnComponent
 dom = (fmap fst) . doco
 cod = (fmap snd) . doco
 

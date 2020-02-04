@@ -10,7 +10,8 @@ module Vein.Core.Monoidal.CompactClosed where
 import qualified Vein.Core.Monoidal.Monoidal as Monoidal
 import Vein.Core.Monoidal.Monoidal ((><), Object (..))
 
-import Data.Fix (Fix (..))
+import Data.Fix (Fix (..) , cata)
+import Control.Monad.Fix (fix)
 
 
 data D a =
@@ -69,12 +70,17 @@ newtype CompactClosedCartesianMorphismF m o r =
 type CompactClosedCartesianMorphism m o =
   Fix (CompactClosedCartesianMorphismF m o)
 
+docoCompactClosedCartesianMorphismF ::  Monad f =>
+                                                            (m -> f (Monoidal.Object (D o), Monoidal.Object (D o)))
+                                                        ->  (r -> f (Monoidal.Object (D o) , Monoidal.Object (D o)))
+                                                        ->  CompactClosedCartesianMorphismF m o r
+                                                        ->  f (Monoidal.Object (D o), Monoidal.Object (D o))
+docoCompactClosedCartesianMorphismF docoM docoR (CompactClosedCartesianMorphismF m) = 
+  (Monoidal.docoCartesian $ docoDualityM $ Monoidal.docoBraided $ Monoidal.docoMorphismF docoM docoR) m
+
 docoCompactClosedCartesianMorphism ::  Monad f =>
                                                             (m -> f (Monoidal.Object (D o), Monoidal.Object (D o)))
                                                         ->  CompactClosedCartesianMorphism m o
                                                         ->  f (Monoidal.Object (D o), Monoidal.Object (D o))
-docoCompactClosedCartesianMorphism docoM (Fix (CompactClosedCartesianMorphismF m)) = 
-  (
-    Monoidal.docoCartesian $ docoDualityM $ Monoidal.docoBraided $ Monoidal.docoMorphismF docoM
-      (docoCompactClosedCartesianMorphism docoM)
-  ) m
+docoCompactClosedCartesianMorphism docoM =
+  cata $ docoCompactClosedCartesianMorphismF docoM id
