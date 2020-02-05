@@ -419,9 +419,9 @@ newtype PoolT k v m a = PoolT (StateT (Map.Map k v) (ReaderT (k -> m v) m) a)
 
 allocate :: (Ord k , Monad m) => k -> PoolT k v m v
 allocate k = PoolT $ do
-  map <- get
+  table <- get
 
-  case Map.lookup k map of
+  case Map.lookup k table of
     Just v -> return v
 
     Nothing -> do
@@ -435,8 +435,25 @@ type LabelPool m a = PoolT JunctionPoint LA.Name m a
 fresh' :: MonadIRBuilder m => JunctionPoint -> LabelPool m LA.Name
 fresh' = allocate
 
-emitLlvmIr :: MonadIRBuilder m => [PreCodeTerminalBranch m a] -> [a -> m ()]
-emitLlvmIr pctbs = undefined
+emitLlvmIr :: (MonadIRBuilder m , MonadIRBuilder m') => [PreCodeTerminalBranch m [Operand]] -> LabelPool m' [[Operand] -> m ()]
+emitLlvmIr (c:cs) = case c of
+  PctbEnd pcb -> do
+    c' <- emitLlvmIrFromPCB pcb
+    emitTail $ c' >=> (const $ return ())
+  
+  PctbFork stem jp -> br' stem jp
+  
+  PctbMerge pcb jp -> br' pcb jp
+
+  where
+    emitTail c' = do
+      cs' <- emitLlvmIr cs
+      return $ c' : cs'
+    
+    br' pcb jp = do
+      c' <- emitLlvmIrFromPCB pcb
+      label <- fresh' jp
+      emitTail $ c' >=> (return $ br label)
 
 emitLlvmIrFromPCB ::  (MonadIRBuilder m , MonadIRBuilder m') =>
                         PreCodeBranch m [Operand] -> LabelPool m' ([Operand] -> m [Operand])
