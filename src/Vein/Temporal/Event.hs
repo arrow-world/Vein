@@ -200,9 +200,6 @@ data PreCodeTerminalBranch m a =
   | PctbFork { pctbStem :: PreCodeBranch m a , pctbJp :: JunctionPoint }
   | PctbMerge (PreCodeBranch m a) JunctionPoint
 
-data PreCode m a =
-  PreCode { pcOutput :: PreCodeBranch m a }
-
 data PreCodes m a =
   PreCodes  { pcsOutputs :: [(OutputPort , PreCodeBranch m a)]
             , pcsTerminals :: [PreCodeTerminalBranch m a]
@@ -220,7 +217,7 @@ type Output m a = (OutputPort , a -> m a)
 type Terminal m a = (a -> m () , OutputPort , m a)
 type OutputNoDirection m a = (Natural , a -> m a)
 
-buildPreCode :: Visitor m a -> PreCode m a -> ComponentNumbered -> InputPort -> ReaderT Env (Either ScanError) (PreCodes m a)
+buildPreCode :: Visitor m a -> PreCodeBranch m a -> ComponentNumbered -> InputPort -> ReaderT Env (Either ScanError) (PreCodes m a)
 buildPreCode visitor initCode (Fix c) port =
   let ComponentNumberedF (CC.CompactClosedCartesianMorphismF c') morphismId = c in
     case c' of
@@ -249,7 +246,7 @@ buildPreCode visitor initCode (Fix c) port =
               return (lOs , rOs , ts)
 
             buildPreCodes component director inputs = do
-              codes <- sequence $ map (\(n,pcb) -> buildPreCode' (PreCode pcb) component $ director n) inputs
+              codes <- sequence $ map (\(n,pcb) -> buildPreCode' pcb component $ director n) inputs
               let ts = concat $ map pcsTerminals codes
               let (lOs , rOs) = partitionOutputs $ concat $ map pcsOutputs codes
               return (lOs , rOs , ts)
@@ -300,7 +297,7 @@ buildPreCode visitor initCode (Fix c) port =
         Mo.Unassoc x y z -> id' ((x >< y) >< z)
         Mo.Morphism val -> do
           os <- visitor val port
-          return $ PreCodes (map (fmap $ flip appendPreCodeBranch $ pcOutput initCode) os) []
+          return $ PreCodes (map (fmap $ flip appendPreCodeBranch initCode) os) []
       
       Mo.Cartesian (DualityM (Mo.Braid x y)) -> do
         (outboundX,inboundX) <- splitDuality' x
@@ -362,18 +359,18 @@ buildPreCode visitor initCode (Fix c) port =
 
         case port of
           LeftInputPort n | n < lo ->
-            return $ PreCodes [ ( RightOutputPort n        , PcbForkStart (pcOutput initCode) jp EksNil )
-                              , ( RightOutputPort $ lo + n , PcbForkStart (pcOutput initCode) jp EksNil )
+            return $ PreCodes [ ( RightOutputPort n        , PcbForkStart initCode jp EksNil )
+                              , ( RightOutputPort $ lo + n , PcbForkStart initCode jp EksNil )
                               ]
-                              [PctbFork (pcOutput initCode) jp]
+                              [PctbFork initCode jp]
             where
               jp = jp' n
 
           RightInputPort n | fromIntegral n < li*2 ->
-              if hasMerge jp (pcOutput initCode) then
-                return $ PreCodes [(op , PcbSnocMerge (pcOutput initCode) jp EksNil)] []
+              if hasMerge jp initCode then
+                return $ PreCodes [(op , PcbSnocMerge initCode jp EksNil)] []
               else
-                return $ PreCodes [] [PctbMerge (pcOutput initCode) jp]
+                return $ PreCodes [] [PctbMerge initCode jp]
             where
               op = LeftOutputPort n'
               jp = jp' n'
@@ -388,7 +385,7 @@ buildPreCode visitor initCode (Fix c) port =
         (outbound,_) <- splitDuality' x
         case port of
           LeftInputPort n | n < (fromIntegral $ length outbound)  ->
-            return $ PreCodes [] [PctbEnd $ pcOutput initCode]
+            return $ PreCodes [] [PctbEnd initCode]
           _                                                       -> throwError $ InvalidInputPort port
 
   where
@@ -399,7 +396,7 @@ buildPreCode visitor initCode (Fix c) port =
         RightInputPort n | fromIntegral n < length inbound -> pure $ outputFrom $ LeftOutputPort n
         _ -> throwError $ InvalidInputPort port
     
-    outputFrom op = PreCodes [(op , pcOutput initCode)] []
+    outputFrom op = PreCodes [(op , initCode)] []
 
     buildPreCode' = buildPreCode visitor
 
