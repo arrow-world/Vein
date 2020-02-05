@@ -36,6 +36,7 @@ import Data.Foldable ( foldrM )
 import Control.Monad.Reader (Reader, ask, asks, runReader, ReaderT, mapReaderT)
 import Control.Monad.Except (throwError, ExceptT (ExceptT))
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.State (StateT)
 import qualified Data.Text as T
 import Data.Fix ( Fix (..), cata )
 import Data.Either ( partitionEithers )
@@ -413,25 +414,44 @@ numbering (Fix c) =
         return $ Fix $ ComponentNumberedF c' Nothing
 
 
+newtype PoolT k v m a = PoolT (StateT (Map.Map k v) (ReaderT (k -> m v) m) a)
+  deriving (Functor, Applicative, Monad)
+
+allocate :: (Ord k , Monad m) => k -> PoolT k v m v
+allocate k = PoolT $ do
+  map <- get
+
+  case Map.lookup k map of
+    Just v -> return v
+
+    Nothing -> do
+      f <- lift ask
+      v <- lift $ lift $ f k
+      modify $ Map.insert k v
+      return v
+
+type LabelPool m a = PoolT JunctionPoint LA.Name m a
+
+fresh' :: MonadIRBuilder m => JunctionPoint -> LabelPool m LA.Name
+fresh' = allocate
+
 emitLlvmIr :: MonadIRBuilder m => [PreCodeTerminalBranch m a] -> [a -> m ()]
 emitLlvmIr pctbs = undefined
 
 emitLlvmIrFromPCB ::  (MonadIRBuilder m , MonadIRBuilder m') =>
-                        PreCodeBranch m [Operand] -> m' ( [Operand] -> m [Operand] , Map.Map JunctionPoint LA.Name )
+                        PreCodeBranch m [Operand] -> LabelPool m' ([Operand] -> m [Operand])
 emitLlvmIrFromPCB pcb = case pcb of
   PcbSnocMerge init jp eks -> do
-    (f , labels) <- emitLlvmIrFromPCB init
-    label <- fresh
+    f <- emitLlvmIrFromPCB init
+    label <- fresh' jp
 
-    return  ( \xs -> do
+    return $  \xs -> do
                 ys <- f xs
                 emitBlockStart label
                 composeEKSeq eks ys
-            , Map.insert jp label labels
-            )
 
-  PcbForkStart _ _ eks -> return (composeEKSeq eks , Map.empty)
-  PcbStart eks -> return (composeEKSeq eks , Map.empty)
+  PcbForkStart _ _ eks -> return $ composeEKSeq eks
+  PcbStart eks -> return $ composeEKSeq eks
 
 
 data TypeValue =
