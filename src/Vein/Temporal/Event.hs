@@ -30,7 +30,7 @@ import LLVM.AST.Operand ( Operand (ConstantOperand) )
 import LLVM.IRBuilder.Monad ( MonadIRBuilder , block , emitBlockStart , fresh , IRBuilder )
 import LLVM.IRBuilder.Monad as LIM
 import LLVM.IRBuilder.Instruction ( br, condBr )
-import Control.Monad ((>>))
+import Control.Monad ((>>) , (>=>))
 import Control.Monad.State ( State , modify , get , runState , MonadFix )
 import Data.Foldable ( foldrM )
 import Control.Monad.Reader (Reader, ask, asks, runReader, ReaderT, mapReaderT)
@@ -132,26 +132,6 @@ type Env = M.ModuleMap Definition
 -- compileCom :: MonadIRBuilder m => Component -> Reader Env (Either ScanError (PreCode m LA.Name [Operand]))
 -- compileCom = undefined
 
-type EndoKleisli m a = a -> m a
-type EKTerminator m a = a -> m ()
-
-{-
-composeEKSeq :: EKSeq m a -> EndoKleisli m a
-composeEKSeq (x:xs) = x >>= composeEKSeq xs
-
-data JumpableCodeBuilder mBuilder mCode a = JumpableCodeBuilder
-  { jump :: EndoKleisli mCode a -> mCode a -> mBuilder (EndoKleisli mCode a , mCode ()) }
-
-llvmJumpableCodeBuilder :: (MonadIRBuilder m, MonadIRBuilder m') => JumpableCodeBuilder m m' [Operand]
-llvmJumpableCodeBuilder = JumpbleCodeBuilder
-  { jump = \cont ctx -> do
-      xs <- ctx
-      label <- block
-      ys <- cont xs
-      return $ (  , br label )
-  }
--}
-
 data InputPort =
     LeftInputPort Natural
   | RightInputPort Natural
@@ -172,11 +152,18 @@ outputPortNo (RightOutputPort n) = n
 
 
 data JunctionPoint = JunctionPoint { jpMorphismId :: Natural , jpLeftPort :: Natural }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Ord)
+
+type EndoKleisli m a = a -> m a
 
 data EKSeq m a =
     EksSnoc (EKSeq m a) (EndoKleisli m a)
   | EksNil
+
+composeEKSeq :: Monad m => EKSeq m a -> EndoKleisli m a
+composeEKSeq (EksSnoc eks ek) = composeEKSeq eks >=> ek
+composeEKSeq EksNil = return
+
 
 data PreCodeBranch m a =
     PcbSnocMerge { pcbSmInit :: PreCodeBranch m a , pcbSmJp :: JunctionPoint , pcbSmEks :: EKSeq m a }
@@ -205,17 +192,8 @@ data PreCodes m a =
             , pcsTerminals :: [PreCodeTerminalBranch m a]
             }
 
-instance Semigroup (PreCodes m a) where
-  x <> y = PreCodes (pcsOutputs x ++ pcsOutputs y) (pcsTerminals x ++ pcsTerminals y)
-
-instance Monoid (PreCodes m a) where
-  mempty = PreCodes { pcsOutputs = [] , pcsTerminals = [] }
-
 
 type Visitor m a = Value -> InputPort -> ReaderT Env (Either ScanError) [(OutputPort , EndoKleisli m a)]
-type Output m a = (OutputPort , a -> m a)
-type Terminal m a = (a -> m () , OutputPort , m a)
-type OutputNoDirection m a = (Natural , a -> m a)
 
 buildPreCode :: Visitor m a -> PreCodeBranch m a -> ComponentNumbered -> InputPort -> ReaderT Env (Either ScanError) (PreCodes m a)
 buildPreCode visitor initCode (Fix c) port =
@@ -435,6 +413,25 @@ numbering (Fix c) =
         return $ Fix $ ComponentNumberedF c' Nothing
 
 
+emitLlvmIr :: MonadIRBuilder m => [PreCodeTerminalBranch m a] -> [a -> m ()]
+emitLlvmIr pctbs = undefined
+
+emitLlvmIrFromPCB ::  (MonadIRBuilder m , MonadIRBuilder m') =>
+                        PreCodeBranch m [Operand] -> m' ( [Operand] -> m [Operand] , Map.Map JunctionPoint LA.Name )
+emitLlvmIrFromPCB pcb = case pcb of
+  PcbSnocMerge init jp eks -> do
+    (f , labels) <- emitLlvmIrFromPCB init
+    label <- fresh
+
+    return  ( \xs -> do
+                ys <- f xs
+                emitBlockStart label
+                composeEKSeq eks ys
+            , Map.insert jp label labels
+            )
+
+  PcbForkStart _ _ eks -> return (composeEKSeq eks , Map.empty)
+  PcbStart eks -> return (composeEKSeq eks , Map.empty)
 
 
 data TypeValue =
