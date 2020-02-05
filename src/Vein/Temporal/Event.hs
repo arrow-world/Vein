@@ -175,32 +175,37 @@ data JunctionPoint = JunctionPoint { jpMorphismId :: Natural , jpLeftPort :: Nat
   deriving (Eq, Show)
 
 data EKSeq m a =
-    EksSnocEK (EKSeq m a) (EndoKleisli m a)
-  | EksSnocMerge (EKSeq m a) JunctionPoint
-  | EksForkStart JunctionPoint
+    EksSnoc (EKSeq m a) (EndoKleisli m a)
   | EksNil
 
-hasJunction :: JunctionPoint -> EKSeq m a -> Bool
-hasJunction jp eks = case eks of
-  EksSnocEK eks' _ -> hasJunction jp eks'
-  EksSnocMerge eks' jp' -> jp == jp' || hasJunction jp eks'
-  EksForkStart _ -> False
-  EksNil -> False
+data PreCodeBranch m a =
+    PcbSnocMerge { pcbSmInit :: PreCodeBranch m a , pcbSmJp :: JunctionPoint , pcbSmEks :: EKSeq m a }
+  | PcbForkStart { pcbStem :: PreCodeBranch m a , pcbJp :: JunctionPoint , pcbEks :: EKSeq m a }
+  | PcbStart { pcbStartEks :: EKSeq m a }
 
-data PreCodeFragment m a =
-    PcfEnd (EKSeq m a)
-  | PcfFork (EKSeq m a) JunctionPoint
-  | PcfMerge (EKSeq m a) JunctionPoint
+appendPreCodeBranch :: EndoKleisli m a -> PreCodeBranch m a -> PreCodeBranch m a
+appendPreCodeBranch ek pcb = case pcb of
+  PcbSnocMerge init jp eks -> PcbSnocMerge init jp (EksSnoc eks ek)
+  PcbForkStart stem jp eks -> PcbForkStart stem jp (EksSnoc eks ek)
+  PcbStart eks -> PcbStart (EksSnoc eks ek)
+
+hasMerge :: JunctionPoint -> PreCodeBranch m a -> Bool
+hasMerge jp pcb = case pcb of
+  PcbSnocMerge pcb' jp' _ -> jp == jp' || hasMerge jp pcb'
+  PcbForkStart stem _ _ -> hasMerge jp stem
+  PcbStart _ -> False
+
+data PreCodeTerminalBranch m a =
+    PctbEnd (PreCodeBranch m a)
+  | PctbFork { pctbStem :: PreCodeBranch m a , pctbJp :: JunctionPoint }
+  | PctbMerge (PreCodeBranch m a) JunctionPoint
 
 data PreCode m a =
-  PreCode { pcOutput :: EKSeq m a
-          , pcOutputPort :: OutputPort
-          , pcTerminals :: [PreCodeFragment m a]
-          }
+  PreCode { pcOutput :: PreCodeBranch m a }
 
 data PreCodes m a =
-  PreCodes  { pcsOutputs :: [(OutputPort , EKSeq m a)]
-            , pcsTerminals :: [PreCodeFragment m a]
+  PreCodes  { pcsOutputs :: [(OutputPort , PreCodeBranch m a)]
+            , pcsTerminals :: [PreCodeTerminalBranch m a]
             }
 
 instance Semigroup (PreCodes m a) where
@@ -208,12 +213,6 @@ instance Semigroup (PreCodes m a) where
 
 instance Monoid (PreCodes m a) where
   mempty = PreCodes { pcsOutputs = [] , pcsTerminals = [] }
-
-singletonPreCodes :: PreCode m a -> PreCodes m a
-singletonPreCodes (PreCode o p ts) = PreCodes [(p,o)] ts
-
-appendPreCode :: PreCodes m a -> PreCode m a -> PreCodes m a
-appendPreCode xs x = xs <> singletonPreCodes x
 
 
 type Visitor m a = Value -> InputPort -> ReaderT Env (Either ScanError) [(OutputPort , EndoKleisli m a)]
@@ -245,12 +244,12 @@ buildPreCode visitor initCode (Fix c) port =
 
           where
             buildPreCode'' component port' = do
-              PreCodes os ts <- buildPreCode' component port'
+              PreCodes os ts <- buildPreCode' initCode component port'
               let (lOs , rOs) = partitionOutputs os
               return (lOs , rOs , ts)
 
             buildPreCodes component director inputs = do
-              codes <- sequence $ map ((buildPreCode' component) . director . fst) inputs
+              codes <- sequence $ map (\(n,pcb) -> buildPreCode' (PreCode pcb) component $ director n) inputs
               let ts = concat $ map pcsTerminals codes
               let (lOs , rOs) = partitionOutputs $ concat $ map pcsOutputs codes
               return (lOs , rOs , ts)
@@ -269,9 +268,9 @@ buildPreCode visitor initCode (Fix c) port =
             partitionOutputs =
               partitionEithers .
                 map
-                  ( \(op,eks) ->  case op of
-                                    LeftOutputPort n -> Left (n , eks)
-                                    RightOutputPort n -> Right (n , eks)
+                  ( \(op,pcb) ->  case op of
+                                    LeftOutputPort n -> Left (n , pcb)
+                                    RightOutputPort n -> Right (n , pcb)
                   )
 
         Mo.ProductM g h -> case port of
@@ -280,8 +279,8 @@ buildPreCode visitor initCode (Fix c) port =
             (outboundH,_) <- dom' h >>= splitDuality'
 
             case (fromIntegral $ length outboundG , fromIntegral $ length outboundH) of
-              (m,m') | n < m -> buildPreCode' g $ LeftInputPort n
-              (m,m') | m <= n && n < m+m' -> buildPreCode' h $ LeftInputPort $ n - m
+              (m,m') | n < m -> buildPreCode' initCode g $ LeftInputPort n
+              (m,m') | m <= n && n < m+m' -> buildPreCode' initCode h $ LeftInputPort $ n - m
               _ -> throwError $ InvalidInputPort port
 
           RightInputPort n -> do
@@ -289,8 +288,8 @@ buildPreCode visitor initCode (Fix c) port =
             (_,inboundH) <- cod' h >>= splitDuality'
 
             case (fromIntegral $ length inboundG , fromIntegral $ length inboundH) of
-              (m,m') | n < m -> buildPreCode' g $ RightInputPort n
-              (m,m') | m <= n && n < m+m' -> buildPreCode' h $ RightInputPort $ n - m
+              (m,m') | n < m -> buildPreCode' initCode g $ RightInputPort n
+              (m,m') | m <= n && n < m+m' -> buildPreCode' initCode h $ RightInputPort $ n - m
               _ -> throwError $ InvalidInputPort port
           
         Mo.UnitorL x -> id' x
@@ -301,7 +300,7 @@ buildPreCode visitor initCode (Fix c) port =
         Mo.Unassoc x y z -> id' ((x >< y) >< z)
         Mo.Morphism val -> do
           os <- visitor val port
-          return $ PreCodes (map (fmap $ EksSnocEK $ pcOutput initCode) os) (pcTerminals initCode)
+          return $ PreCodes (map (fmap $ flip appendPreCodeBranch $ pcOutput initCode) os) []
       
       Mo.Cartesian (DualityM (Mo.Braid x y)) -> do
         (outboundX,inboundX) <- splitDuality' x
@@ -363,18 +362,18 @@ buildPreCode visitor initCode (Fix c) port =
 
         case port of
           LeftInputPort n | n < lo ->
-            return $ PreCodes [ ( RightOutputPort n        , EksForkStart jp )
-                              , ( RightOutputPort $ lo + n , EksForkStart jp )
+            return $ PreCodes [ ( RightOutputPort n        , PcbForkStart (pcOutput initCode) jp EksNil )
+                              , ( RightOutputPort $ lo + n , PcbForkStart (pcOutput initCode) jp EksNil )
                               ]
-                              $ PcfFork (pcOutput initCode) jp : pcTerminals initCode
+                              [PctbFork (pcOutput initCode) jp]
             where
               jp = jp' n
 
           RightInputPort n | fromIntegral n < li*2 ->
-              if hasJunction jp (pcOutput initCode) then
-                return $ PreCodes [(op , EksSnocMerge (pcOutput initCode) jp)] $ pcTerminals initCode
+              if hasMerge jp (pcOutput initCode) then
+                return $ PreCodes [(op , PcbSnocMerge (pcOutput initCode) jp EksNil)] []
               else
-                return $ PreCodes [] $ PcfMerge (pcOutput initCode) jp : pcTerminals initCode
+                return $ PreCodes [] [PctbMerge (pcOutput initCode) jp]
             where
               op = LeftOutputPort n'
               jp = jp' n'
@@ -389,7 +388,7 @@ buildPreCode visitor initCode (Fix c) port =
         (outbound,_) <- splitDuality' x
         case port of
           LeftInputPort n | n < (fromIntegral $ length outbound)  ->
-            return $ PreCodes [] $ pcTerminals initCode ++ [PcfEnd $ pcOutput initCode]
+            return $ PreCodes [] [PctbEnd $ pcOutput initCode]
           _                                                       -> throwError $ InvalidInputPort port
 
   where
@@ -400,9 +399,9 @@ buildPreCode visitor initCode (Fix c) port =
         RightInputPort n | fromIntegral n < length inbound -> pure $ outputFrom $ LeftOutputPort n
         _ -> throwError $ InvalidInputPort port
     
-    outputFrom op = singletonPreCodes $ initCode { pcOutputPort = op }
+    outputFrom op = PreCodes [(op , pcOutput initCode)] []
 
-    buildPreCode' = buildPreCode visitor initCode
+    buildPreCode' = buildPreCode visitor
 
     splitDuality' = liftExpandTypeErr . splitDuality
     flattenType' = liftExpandTypeErr . flattenType
@@ -437,6 +436,9 @@ numbering (Fix c) =
       _ -> do
         c' <- traverse numbering c
         return $ Fix $ ComponentNumberedF c' Nothing
+
+
+
 
 data TypeValue =
     TypeValue { typeCtor :: M.QN , typeParams :: [C.Value] }
