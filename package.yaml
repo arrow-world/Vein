@@ -1,5 +1,8 @@
 library:
   source-dirs: src
+  other-modules:
+  - Vein.Syntax.Lexer
+  - Vein.Syntax.Parser
 tests:
   vein-test:
     source-dirs: test
@@ -22,6 +25,8 @@ dependencies:
 - containers
 - mtl
 - transformers
+- array
+- split
 name: vein
 version: 0.1.0.0
 extra-source-files:
@@ -41,3 +46,6 @@ executables:
     dependencies:
     - vein
 description: Please see the README on GitHub at <https://github.com/githubuser/vein#readme>
+build-tools:
+- alex
+- happy

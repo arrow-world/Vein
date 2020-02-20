@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a6edddca720895ec3cfa2b774d81f8f7bd69ba1b8e51785f9ac45b40e8bb8aaf
+-- hash: 8b3f4edbf406ad45e5e548af6234cb6ce1148c6892d1e697a97932b37d65af9b
 
 name:           vein
 version:        0.1.0.0
@@ -38,17 +38,23 @@ library
       Vein.Temporal.Event
       Vein.Temporal.Types
   other-modules:
-      Paths_vein
+      Vein.Syntax.Lexer
+      Vein.Syntax.Parser
   hs-source-dirs:
       src
+  build-tools:
+      alex
+    , happy
   build-depends:
-      base
+      array
+    , base
     , containers
     , data-fix
     , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
     , prettyprinter
+    , split
     , text
     , transformers
   default-language: Haskell2010
@@ -60,14 +66,19 @@ executable vein-exe
   hs-source-dirs:
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-tools:
+      alex
+    , happy
   build-depends:
-      base
+      array
+    , base
     , containers
     , data-fix
     , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
     , prettyprinter
+    , split
     , text
     , transformers
     , vein
@@ -81,14 +92,19 @@ test-suite vein-test
   hs-source-dirs:
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-tools:
+      alex
+    , happy
   build-depends:
-      base
+      array
+    , base
     , containers
     , data-fix
     , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
     , prettyprinter
+    , split
     , text
     , transformers
     , vein
