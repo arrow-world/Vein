@@ -438,44 +438,49 @@ allocate k = PoolT $ do
       return v
 
 type StartPoint = (JunctionPoint , Maybe ForkDirection)
+type BranchIndex = Natural
 type LabelPool m a = PoolT StartPoint LA.Name m a
 
-fresh' :: MonadIRBuilder m => (JunctionPoint , Maybe ForkDirection) -> LabelPool m LA.Name
-fresh' = allocate
+allocateLabel :: MonadIRBuilder m => (JunctionPoint , Maybe ForkDirection) -> LabelPool m LA.Name
+allocateLabel = allocate
 
-{-
-emitLlvmIr :: (MonadIRBuilder m , MonadIRBuilder m') => [PreCodeTerminalBranch m [Operand]] -> LabelPool m' [[Operand] -> m ()]
-emitLlvmIr (c:cs) = case c of
+emitMarkOccupied :: MonadIRBuilder m => BranchIndex -> m ()
+emitMarkOccupied i = undefined
+
+emitUnmarkOccupied :: MonadIRBuilder m => BranchIndex -> m ()
+emitUnmarkOccupied i = undefined
+
+emitSubmitTask :: MonadIRBuilder m => BranchIndex -> [Operand] -> m ()
+emitSubmitTask i = undefined
+
+emitLlvmIrFromPCTB :: (MonadIRBuilder m , MonadIRBuilder m') =>
+                        PreCodeTerminalBranch m [Operand] -> LabelPool m' ([Operand] -> m ())
+emitLlvmIrFromPCTB c = case c of
   PctbEnd pcb -> do
     c' <- emitLlvmIrFromPCB pcb
-    emitTail $ c' >=> (const $ return ())
+    return $ c' >=> (const $ return ())
   
   PctbFork stem jp -> do
     c' <- emitLlvmIrFromPCB stem
 
-    left <- fresh' (jp , Just ForkLeft)
-    right <- fresh' (jp , Just ForkRight)
+    left <- allocateLabel (jp , Just ForkLeft)
+    right <- allocateLabel (jp , Just ForkRight)
 
-    emitTail $ \xs -> do
+    return $ \xs -> do
       ys <- c' xs
       br left
   
   PctbMerge pcb jp -> do
     c' <- emitLlvmIrFromPCB pcb
-    label <- fresh' (jp , fd)
-    emitTail $ c' >=> (return $ br label)
-
-  where
-    emitTail c' = do
-      cs' <- emitLlvmIr cs
-      return $ c' : cs'
+    label <- allocateLabel (jp , Nothing) 
+    return $ c' >=> (return $ br label)
 
 emitLlvmIrFromPCB ::  (MonadIRBuilder m , MonadIRBuilder m') =>
-                        PreCodeBranch m [Operand] -> LA.Name -> LabelPool m' ([Operand] -> m [Operand])
-emitLlvmIrFromPCB pcb retLabel = case pcb of
+                        PreCodeBranch m [Operand] -> LabelPool m' ([Operand] -> m [Operand])
+emitLlvmIrFromPCB pcb = case pcb of
   PcbSnocMerge init jp eks -> do
     f <- emitLlvmIrFromPCB init
-    label <- fresh' (jp , Nothing)
+    label <- allocateLabel (jp , Nothing)
 
     return $  \xs -> do
                 ys <- f xs
@@ -483,45 +488,10 @@ emitLlvmIrFromPCB pcb retLabel = case pcb of
                 composeEKSeq eks ys
 
   PcbForkStart _ jp fd eks -> do
-    label <- fresh' (jp , Just fd)
+    label <- allocateLabel (jp , Just fd)
     return $ \xs -> emitBlockStart label *> composeEKSeq eks xs
 
   PcbStart eks -> return $ composeEKSeq eks
--}
-
-data PreCode m a =
-    PcSnocMerge { pcSmInit :: PreCode m a , pcSmJp :: JunctionPoint , pcSmEks :: EKSeq m a }
-  | PcStart { pcStartEks :: EKSeq m a }
-
-data PreCodeTree m a =
-    PctEnd (PreCode m a)
-  | PctMerge (PreCode m a) JunctionPoint
-  | PctFork { pctStem :: PreCode m a , pctDestL :: PreCodeTree m a , pctDestR :: PreCodeTree m a }
-
-buildPreCodeTree :: [PreCodeTerminalBranch m a] -> [PreCodeTree m a]
-buildPreCodeTree tbs = map (unwrap . pctbToPreCodeTree tbs) $ filter (not . isForkDest) tbs
-
-pctbToPreCodeTree :: [PreCodeTerminalBranch m a] -> PreCodeTerminalBranch m a -> Maybe (PreCodeTree m a)
-pctbToPreCodeTree tbs tb = case tb of
-  PctbFork stem jp -> do 
-    let tbL = unwrap $ forkDest jp ForkLeft tbs
-    let tbR = unwrap $ forkDest jp ForkRight tbs
-
-    stem' <- toPreCode tbs stem
-    pctL <- pctbToPreCodeTree tbs tbL
-    pctR <- pctbToPreCodeTree tbs tbR
-
-    return $ PctFork stem' pctL pctR
-  
-  PctbEnd b -> PctEnd <$> toPreCode tbs b
-
-  PctbMerge b jp -> PctMerge <$> toPreCode tbs b <*> pure jp
-
-toPreCode :: [PreCodeTerminalBranch m a] -> PreCodeBranch m a -> Maybe (PreCode m a)
-toPreCode tbs b = case b of
-  PcbForkStart stem jp fd eks -> Nothing
-  PcbSnocMerge init jp eks -> PcSnocMerge <$> toPreCode tbs init <*> pure jp <*> pure eks
-  PcbStart eks -> Just $ PcStart eks
 
 forkDest :: JunctionPoint -> ForkDirection -> [PreCodeTerminalBranch m a] -> Maybe (PreCodeTerminalBranch m a)
 forkDest jp fd [] = Nothing
@@ -534,8 +504,6 @@ isForkDest tb = case branch tb of
   PcbForkStart _ _ _ _ -> True
   _ -> False
 
-unwrap :: Maybe a -> a
-unwrap (Just x) = x
 
 data TypeValue =
     TypeValue { typeCtor :: M.QN , typeParams :: [C.Value] }
