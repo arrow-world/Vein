@@ -16,19 +16,21 @@ $digit = [0-9]
 $alphabet = [a-zA-Z]
 $sign = [\+\-]
 
-@alnum = $alphabet | $digit | [\_\']
-@fqn = (@alnum\.)*@alnum
-@special = []
-@char = @special | .
+@letter = $alphabet | $digit | \'
+@name = @letter (@letter | \_)* | \_ (@letter | \_)+
+@fqn = (@name \.)* @name
+@escape = \\ [\'\"\\abnfrtv0]
+@char = @escape | [^\'\"\\]
 
 tokens :-
   $white+               ;
   "--" .* $             ;
   "{-" .* "-}"          ;
-  $digit+               { locate $ TNat . (Decimal,) . readDec }
-  "0x" $digit+          { locate $ TNat . (Hex,) . readHex . drop 2 }
-  "0b" $digit+          { locate $ TNat . (Binary,) . readBin . drop 2 }
+  $digit+               { locate $ TNat Decimal . readDec }
+  "0x" $digit+          { locate $ TNat Hex . readHex . drop 2 }
+  "0b" $digit+          { locate $ TNat Binary . readBin . drop 2 }
   \' @char \'           { locate $ TChar . readChar . init . tail }
+  \" @char* \"          { locate $ TStr . readStr . init . tail }
   data                  { locate $ const $ TKeyword Data }
   let                   { locate $ const $ TKeyword Let }
   in                    { locate $ const $ TKeyword In }
@@ -39,7 +41,8 @@ tokens :-
   import                { locate $ const $ TKeyword Import }
   module                { locate $ const $ TKeyword Module }
   typeclass             { locate $ const $ TKeyword Typeclass }
-  @fqn                  { locate $ TFQN . readFQN }
+  do                    { locate $ const $ TKeyword Do }
+  @fqn                  { locate $ TQN . readQN }
   "="                   { locate $ const $ TSymbol Def }
   "=="                  { locate $ const $ TSymbol Eq }
   "/="                  { locate $ const $ TSymbol Neq }
@@ -56,11 +59,13 @@ tokens :-
   "\\"                  { locate $ const $ TSymbol Lambda }
   "*"                   { locate $ const $ TSymbol Asterisk }
   "^"                   { locate $ const $ TSymbol Power }
-  "_"                   { locate $ const $ TSymbol Hole }
+  "?"                   { locate $ const $ TSymbol Hole }
+  "_"                   { locate $ const $ TSymbol Placeholder }
   ":"                   { locate $ const $ TSymbol Typing }
   "."                   { locate $ const $ TSymbol Compose }
   "$"                   { locate $ const $ TSymbol AppRight }
   "!"                   { locate $ const $ TSymbol LiftFunctor }
+  "<-"                  { locate $ const $ TSymbol Assign }
   "("                   { locate $ const $ TParen Round LeftParen }
   ")"                   { locate $ const $ TParen Round RightParen }
   "{"                   { locate $ const $ TParen Curly LeftParen }
@@ -73,31 +78,35 @@ tokens :-
 
 {
 data Token =
-    TNat (Base , Natural)
-  | TFP (Base , FloatingPoint)
+    TNat Base Natural
+  | TFP Base FloatingPoint
   | TStr String
   | TChar Char
   | TParen ParenSort ParenLR
   | TKeyword Keyword
   | TSymbol Symbol
-  | TFQN FQN 
+  | TQN QN
   | TSeparator Separator
   deriving (Eq,Show)
 
-type LocatedToken = (Token , AlexPosn)
-
-locate :: (a -> Token) -> AlexPosn -> a -> LocatedToken
-locate f loc x = (f x , loc)
-
-data FQN =
-    FQN String
-  | FQNCons String FQN
+data Span = Span { spanBegin :: AlexPosn , spanLength :: Natural }
   deriving (Eq,Show)
 
-readFQN :: String -> FQN
-readFQN fqn =
-  let (s:ss) = splitOn "." fqn in
-    foldr FQNCons (FQN s) ss
+type LocatedToken = (Token , Span)
+
+locate :: (String -> Token) -> AlexPosn -> String -> LocatedToken
+locate f loc s = ( f s , Span loc $ fromIntegral $ length s )
+
+data QN =
+    QN String
+  | QNCons String QN
+  deriving (Eq,Show)
+
+readQN :: String -> QN
+readQN = toQN . splitOn "."
+  where
+    toQN [s] = QN s
+    toQN (s:ss) = QNCons s (toQN ss)
 
 
 data FloatingPoint =
@@ -112,13 +121,13 @@ data Base = Decimal | Hex | Binary deriving (Eq,Show)
 data ParenSort = Round | Curly | Square deriving (Eq,Show)
 data ParenLR = LeftParen | RightParen deriving (Eq,Show)
 
-data Keyword = Data | Let | In | Case | Of | Match | Where | Module | Import | Typeclass
+data Keyword = Data | Let | In | Case | Of | Match | Where | Module | Import | Typeclass | Do
   deriving (Eq,Show)
 
 data Symbol =
     Def | Eq | Neq | LessThan | GreaterThan | LessThanEq | GreaterThanEq
   | Plus | Minus | Times | Div | Inverse | Arrow | Lambda
-  | Asterisk | Power | Hole | Typing | Compose | AppRight | LiftFunctor | ComposeRight
+  | Asterisk | Power | Hole | Typing | Compose | AppRight | LiftFunctor | ComposeRight | Assign | Placeholder
   | UserDef String
   deriving (Eq,Show)
 
@@ -134,5 +143,30 @@ readHex :: Integral a => String -> a
 readHex = fst . head . Numeric.readHex
 
 readChar :: String -> Char
-readChar s = head s
+readChar = fst . consumeChar
+
+readStr :: String -> String
+readStr [] = []
+readStr s =
+  let (c,s') = consumeChar s in
+    c : readStr s'
+
+consumeChar :: String -> (Char,String)
+consumeChar s = case s of
+  '\\' : c : s -> (c',s)
+    where
+      c' = case c of
+        'a' -> '\a'
+        'b' -> '\b'
+        'n' -> '\n'
+        'f' -> '\f'
+        'r' -> '\r'
+        't' -> '\t'
+        'v' -> '\v'
+        '0' -> '\0'
+        '\'' -> '\''
+        '\"' -> '\"'
+        '\\' -> '\\'
+  c : s -> (c,s)
+
 }

@@ -7,6 +7,7 @@ import Numeric.Natural (Natural)
 import qualified Data.Text as T
 import qualified Data.Map.Lazy as Map
 
+{-
 tBehavior = LT.NewType { LT.paramTypes = [LT.Univ 0] }
 
 tEvent = LT.NewType { LT.paramTypes = [LT.Univ 0] }
@@ -20,3 +21,4 @@ mod =
     , ("Temporal.Event", tEvent)
     , ("Temporal.Analog.Bandlimited", tBandlimitedAnalog)
     ]
+-}
