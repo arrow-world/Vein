@@ -26,6 +26,6 @@ main = do
   let verbose = Option.verbose opt
 
   srcs <- traverse readFile inputFiles
-  print srcs
+  print $ map parse srcs
 
   return ()
