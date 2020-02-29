@@ -78,6 +78,7 @@ do        { (L.TKeyword L.Do , $$) }
 
 %%
 
+{-
 top:
     defs                    { Top $1 }
 
@@ -103,41 +104,83 @@ constructors:
   | constructor '|' constructors  { $1 : $3 }
 
 defTypeclass:
-    typeclass expr where '{' props '}'  { Typeclass $2 $5 }
+    typeclass expr '{' props '}'  { Typeclass $2 $4 }
+
 
 defInstance:
-    instance expr where '{' props '}'   { Instance $2 $5 }
+    instance expr '{' props '}'   { Instance $2 $4 }
+
+-}
+
+expr_with_typing:
+    expr                          { $1 }
+  | expr ':' expr                 { mkExpr $1 $3 $ EBinaryOpF Typing $1 $3 }
+
+expr_with_where:
+    expr                          { $1 }
+  | expr where '{' props '}'      { mkExpr $1 $5 $ EWhereF $1 $4 }
+
+expr:
+    expr4                         { $1 }
+
+
+expr4:
+    expr3                         { $1 }
+  | '\\' pat '->' expr            { mkExpr $1 $4 $ ELamF $2 $4 }
+  | let props in expr             { mkExpr $1 $4 $ ELetInF $2 $4 }
+  | case expr of clauses          { mkExpr $1 $4 $ ECaseOfF $2 $4 }
+  | match clauses                 { mkExpr $1 $2 $ EMatchF $2 }
+  | do '{' stmts '}'              { mkExpr $1 $4 $ EDo $3 }
+
+clause:
+    pat '->' expr               { Located (composeSpan $1 $3) $ Clause $1 $3 }
+
+clauses:
+    clause ';'              { Located (composeSpan $1 $2) [$1] }
+  | clause ';' clauses      { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
+
+expr3:
+    expr2                           { $1 }
+  | expr2 '->' expr3                { mkExpr $1 $3 $ mkArrow (Located (toSpan $1) $ Param $1) $3 }
+  | '{' expr2 '}' '->' expr3        { mkExpr $1 $5 $ mkArrow (Located (composeSpan $1 $3) $ ParamImplicit $2) $5 }
+  | expr2 '+' expr2                 { mkExpr $1 $3 $ EBinaryOpF Plus $1 $3 }
+  | expr2 '-' expr2                 { mkExpr $1 $3 $ EBinaryOpF Minus $1 $3 }
+  | expr2 '><' expr2                { mkExpr $1 $3 $ EBinaryOpF Times $1 $3 }
+  | expr2 '/' expr2                 { mkExpr $1 $3 $ EBinaryOpF Div $1 $3 }
+  | expr2 '$' expr2                 { mkExpr $1 $3 $ EBinaryOpF AppRight $1 $3 }
+
+
+pat:
+    expr2                           { $1 }
+
+
+expr2:
+    expr1                           { $1 }
+  | expr1 params                    { mkExpr $1 $2 $ EApp $1 $ unLocated $2 }
+
+param:
+    expr1                           { Located (toSpan $1) $ Param $1 }
+  | '{' expr '}'                    { Located (composeSpan $1 $3) $ ParamImplicit $2 }
+
+params:
+    param                           { Located (toSpan $1) [$1] }
+  | param params                    { Located (composeSpan $1 $2) $ $1 : unLocated $2 }
+
+
+expr1 :: {LocatedExpr} :
+    name                          { mkExpr $1 $1 $ EVar $ unLocated $1 }
+  | literal                       { mkExpr $1 $1 $ ELiteralF $ fst $1 }
+  | '~' expr1                     { mkExpr $1 $2 $ EUnaryOpF Inverse $2 }
+  | '(' expr ')'                  { mkExpr $1 $3 $ leExprF $ unFix $2 }
+  | list                          { mkExpr $1 $1 $ EListF $1 }
+  | tuple                         { mkExpr $1 $1 $ ETupleF $1 }
+  | '?'                           { mkExpr $1 $1 $ EHole }
 
 literal:  
     nat                     { let (L.TNat b n , l) = $1 in (LNat b n , l) }
   | fp                      { let (L.TFP b fp , l) = $1 in (LFP b fp , l) }
   | str                     { let (L.TStr s , l) = $1 in (LStr s , l) }
   | char                    { let (L.TChar c , l) = $1 in (LChar c , l) }
-
-expr :: {LocatedExpr} :
-    literal                       { mkExpr $1 $1 $ ELiteralF $ fst $1 }
-  | '(' expr ')'                  { mkExpr $1 $3 $ leExprF $ unFix $2 }
-  | '~' expr                      { mkExpr $1 $2 $ EUnaryOpF Inverse $2 }
-  | expr expr                     { mkExpr $1 $2 $ EBinaryOpF App $1 $2 }
-  | expr '{' expr '}'             { mkExpr $1 $4 $ EBinaryOpF AppImplicit $1 $3 }
-  | let props in expr             { mkExpr $1 $4 $ ELetInF $2 $4 }
-  | expr where '{' props '}'      { mkExpr $1 $5 $ EWhereF $1 $4 }
-  | case expr of clauses          { mkExpr $1 $4 $ ECaseOfF $2 $4 }
-  | match clauses                 { mkExpr $1 $2 $ EMatchF $2 }
-  | list                          { mkExpr $1 $1 $ EListF $1 }
-  | tuple                         { mkExpr $1 $1 $ ETupleF $1 }
-  | '\\' expr '->' expr           { mkExpr $1 $4 $ ELamF $2 $4 }
-  | expr '->' expr                { mkExpr $1 $3 $ EArrowF $1 $3 }
-  | '{' expr '}' '->' expr        { mkExpr $1 $5 $ EArrowImplicitF $2 $5 }
-  | do '{' stmts '}'              { mkExpr $1 $4 $ EDo $3 }
-  | '?'                           { mkExpr $1 $1 $ EHole }
-  | expr '+' expr                 { mkExpr $1 $3 $ EBinaryOpF Plus $1 $3 }
-  | expr '-' expr                 { mkExpr $1 $3 $ EBinaryOpF Minus $1 $3 }
-  | expr '><' expr                { mkExpr $1 $3 $ EBinaryOpF Times $1 $3 }
-  | expr '/' expr                 { mkExpr $1 $3 $ EBinaryOpF Div $1 $3 }
-  | expr ':' expr                 { mkExpr $1 $3 $ EBinaryOpF Typing $1 $3 }
-  | expr '$' expr                 { mkExpr $1 $3 $ EBinaryOpF AppRight $1 $3 }
-  | name                          { mkExpr $1 $1 $ EVar $ unLocated $1 }
 
 name:
     qn                      { let (L.TQN qn , l) = $1 in Located l qn }
@@ -150,25 +193,21 @@ props :: {Located [Located (Prop LocatedExpr)]} :
     prop                    { Located (composeSpan $1 $1) [$1] }
   | prop ';' props          { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
-clause:
-    expr '->' expr    { Located (composeSpan $1 $3) $ Clause $1 $3 }
-
-clauses:
-    clause ';'              { Located (composeSpan $1 $2) [$1] }
-  | clause ';' clauses      { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 list:
     '[' ']'               { Located (composeSpan $1 $2) [] }
   | '[' elems ']'         { Located (composeSpan $1 $3) $ unLocated $2 }
 
 tuple:
-    '(' ')'               { Located (composeSpan $1 $2) [] }
-  | '(' elems ')'         { Located (composeSpan $1 $3) $ unLocated $2 }
+    '(' ')'                       { Located (composeSpan $1 $2) [] }
+  | '(' expr ',' ')'              { Located (composeSpan $1 $4) [$2] }
+  | '(' expr ',' elems ')'        { Located (composeSpan $1 $5) $ $2 : unLocated $4 }
 
 elems:
     expr                  { Located (toSpan $1) [$1] }
   | expr ','              { Located (composeSpan $1 $2) [$1] }
   | expr ',' elems        { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
+
 
 stmt:
     expr                  { Located (toSpan $1) $ Stmt $1 }
@@ -219,7 +258,8 @@ data Param e =
   deriving (Eq,Show,Functor)
 
 data ExprF r =
-    EUnaryOpF UnaryOp r
+    EApp r [Located (Param r)]
+  | EUnaryOpF UnaryOp r
   | EBinaryOpF BinaryOp r r
   | ELiteralF Literal
   | ELetInF (Located [Located (Prop r)]) r
@@ -229,8 +269,7 @@ data ExprF r =
   | EListF (Located [r])
   | ETupleF (Located [r])
   | ELamF r r
-  | EArrowF r r
-  | EArrowImplicitF r r
+  | EArrowF [Located (Param r)] r
   | EDo (Located [Located (Stmt r)])
   | EHole
   | EVar L.QN
@@ -302,6 +341,10 @@ composeSpanList ss = composeSpan (head ss) (last ss)
 
 mkExpr :: HasSpan a => HasSpan b => a -> b -> ExprF LocatedExpr -> LocatedExpr
 mkExpr first last e = Fix $ LocatedExprF e $ composeSpan (toSpan first) (toSpan last)
+
+mkArrow :: Located (Param LocatedExpr) -> LocatedExpr -> ExprF LocatedExpr
+mkArrow a (Fix (LocatedExprF (EArrowF as b) _)) = EArrowF (a:as) b
+mkArrow a b = EArrowF [a] b
 
 parseError :: L.LocatedToken -> L.Alex a
 parseError t = L.alexError $ "parseError: " ++ show t
