@@ -19,6 +19,7 @@ $sign = [\+\-]
 @letter = $alphabet | $digit | \'
 @name = @letter (@letter | \_)* | \_ (@letter | \_)+
 @fqn = (@name \.)* @name
+
 @escape = \\ [\'\"\\abnfrtv0]
 @char = @escape | [^\'\"\\]
 
@@ -41,6 +42,7 @@ tokens :-
   import                { hook $ const $ TKeyword Import }
   module                { hook $ const $ TKeyword Module }
   typeclass             { hook $ const $ TKeyword Typeclass }
+  instance              { hook $ const $ TKeyword Instance }
   do                    { hook $ const $ TKeyword Do }
   @fqn                  { hook $ TQN . readQN }
   "="                   { hook $ const $ TSymbol Def }
@@ -104,7 +106,10 @@ absAlexPosn (AlexPn n _ _) = fromIntegral n
 type LocatedToken = (Token , Maybe Span)
 
 hook :: (String -> Token) -> AlexInput -> Int -> Alex LocatedToken
-hook f (pos,_,_,input) _ = return ( f input , Just $ Span pos $ Just $ absAlexPosn pos + (fromIntegral $ length input) )
+hook f (pos,_,_,input) len =
+    return ( f s , Just $ Span pos $ Just $ absAlexPosn pos + fromIntegral len )
+  where
+    s = take len input
 
 data QN =
     QN String
@@ -130,7 +135,7 @@ data Base = Decimal | Hex | Binary deriving (Eq,Show)
 data ParenSort = Round | Curly | Square deriving (Eq,Show)
 data ParenLR = LeftParen | RightParen deriving (Eq,Show)
 
-data Keyword = Data | Let | In | Case | Of | Match | Where | Module | Import | Typeclass | Do
+data Keyword = Data | Let | In | Case | Of | Match | Where | Module | Import | Typeclass | Instance | Do
   deriving (Eq,Show)
 
 data Symbol =

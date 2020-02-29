@@ -35,6 +35,7 @@ where     { (L.TKeyword L.Where , $$) }
 import    { (L.TKeyword L.Import , $$) }
 module    { (L.TKeyword L.Module , $$) }
 typeclass { (L.TKeyword L.Typeclass , $$) }
+instance  { (L.TKeyword L.Instance , $$) }
 do        { (L.TKeyword L.Do , $$) }
 '='       { (L.TSymbol L.Def , $$) }
 '=='      { (L.TSymbol L.Eq , $$) }
@@ -82,33 +83,30 @@ top:
 def:
     defData                 { DefData $1 }
   | defTypeclass            { DefTypeclass $1 }
+  | defInstance             { DefInstance  $1 }
   | prop                    { DefConst $1 }
 
 defs:
     def                     { [$1] }
+  | def defs                { $1 : $2 }
   | def ';' defs            { $1 : $3 }
 
 defData:
-    data expr where props         { GADT $2 $4 }
+    data expr '{' props '}'       { GADT $2 $4 }
   | data expr '=' constructors    { ADT $2 $4 }
 
 constructor:
-    name params             { Constructor $1 $2 }
-
-param:
-    expr                 { Param $1 }
-  | '{' expr '}'         { ParamImplicit $2 }
-
-params:
-    param                   { [$1] }
-  | param ';' params        { $1 : $3 }
+    expr                          { Constructor $1 }
 
 constructors:
     constructor                   { [$1] }
   | constructor '|' constructors  { $1 : $3 }
 
 defTypeclass:
-    typeclass expr where props     { Typeclass $2 $4 }
+    typeclass expr '{' props '}'  { Typeclass $2 $4 }
+
+defInstance:
+    instance expr '{' props '}'   { Instance $2 $4 }
 
 literal:  
     nat                     { let (L.TNat b n , l) = $1 in (LNat b n , l) }
@@ -120,31 +118,32 @@ expr :: {LocatedExpr} :
     literal                       { mkExpr $1 $1 $ ELiteralF $ fst $1 }
   | '(' expr ')'                  { mkExpr $1 $3 $ leExprF $ unFix $2 }
   | '~' expr                      { mkExpr $1 $2 $ EUnaryOpF Inverse $2 }
-  | expr '+' expr                 { mkExpr $1 $3 $ EBinaryOpF Plus $1 $3 }
-  | expr '-' expr                 { mkExpr $1 $3 $ EBinaryOpF Minus $1 $3 }
-  | expr '><' expr                { mkExpr $1 $3 $ EBinaryOpF Times $1 $3 }
-  | expr '/' expr                 { mkExpr $1 $3 $ EBinaryOpF Div $1 $3 }
-  | expr ':' expr                 { mkExpr $1 $3 $ EBinaryOpF Typing $1 $3 }
   | expr expr                     { mkExpr $1 $2 $ EBinaryOpF App $1 $2 }
   | expr '{' expr '}'             { mkExpr $1 $4 $ EBinaryOpF AppImplicit $1 $3 }
   | let props in expr             { mkExpr $1 $4 $ ELetInF $2 $4 }
-  | expr where props              { mkExpr $1 $3 $ EWhereF $1 $3 }
-  | case name of clauses          { mkExpr $1 $4 $ ECaseOfF $2 $4 }
+  | expr where '{' props '}'      { mkExpr $1 $5 $ EWhereF $1 $4 }
+  | case expr of clauses          { mkExpr $1 $4 $ ECaseOfF $2 $4 }
   | match clauses                 { mkExpr $1 $2 $ EMatchF $2 }
   | list                          { mkExpr $1 $1 $ EListF $1 }
   | tuple                         { mkExpr $1 $1 $ ETupleF $1 }
   | '\\' expr '->' expr           { mkExpr $1 $4 $ ELamF $2 $4 }
   | expr '->' expr                { mkExpr $1 $3 $ EArrowF $1 $3 }
   | '{' expr '}' '->' expr        { mkExpr $1 $5 $ EArrowImplicitF $2 $5 }
-  | do stmts                      { mkExpr $1 $2 $ EDo $2 }
+  | do '{' stmts '}'              { mkExpr $1 $4 $ EDo $3 }
   | '?'                           { mkExpr $1 $1 $ EHole }
+  | expr '+' expr                 { mkExpr $1 $3 $ EBinaryOpF Plus $1 $3 }
+  | expr '-' expr                 { mkExpr $1 $3 $ EBinaryOpF Minus $1 $3 }
+  | expr '><' expr                { mkExpr $1 $3 $ EBinaryOpF Times $1 $3 }
+  | expr '/' expr                 { mkExpr $1 $3 $ EBinaryOpF Div $1 $3 }
+  | expr ':' expr                 { mkExpr $1 $3 $ EBinaryOpF Typing $1 $3 }
+  | name                          { mkExpr $1 $1 $ EVar $ unLocated $1 }
 
 name:
-    qn                      { let (L.TQN qn , _) = $1 in qn }
+    qn                      { let (L.TQN qn , l) = $1 in Located l qn }
 
 prop :: {Located (Prop LocatedExpr)} :
     expr '=' expr                           { Located (composeSpan $1 $3) $ PropEq $1 $3 }
-  | expr ':' expr ';' expr '=' expr   { Located (composeSpan $1 $7) $ PropEqWithTypeAnnotation $1 $3 $5 $7 }
+  | expr ':' expr ';' expr '=' expr         { Located (composeSpan $1 $7) $ PropEqWithTypeAnnotation $1 $3 $5 $7 }
 
 props :: {Located [Located (Prop LocatedExpr)]} :
     prop                    { Located (lSpan $1) [$1] }
@@ -159,18 +158,21 @@ clauses:
   | clause ';' clauses      { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 list:
-    '[' elems ']'           { Located (composeSpan $1 $3) $ unLocated $2 }
+    '[' ']'               { Located (composeSpan $1 $2) [] }
+  | '[' elems ']'         { Located (composeSpan $1 $3) $ unLocated $2 }
 
 tuple:
-    elems                   { $1 }
+    '(' ')'               { Located (composeSpan $1 $2) [] }
+  | '(' elems ')'         { Located (composeSpan $1 $3) $ unLocated $2 }
 
 elems:
-    expr                 { Located (toSpan $1) [$1] }
-  | expr ',' elems       { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
+    expr                  { Located (toSpan $1) [$1] }
+  | expr ','              { Located (composeSpan $1 $2) [$1] }
+  | expr ',' elems        { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 stmt:
-    expr                 { Located (toSpan $1) $ Stmt $1 }
-  | expr '<-' expr    { Located (composeSpan $1 $3) $ StmtAssign $1 $3 }
+    expr                  { Located (toSpan $1) $ Stmt $1 }
+  | expr '<-' expr        { Located (composeSpan $1 $3) $ StmtAssign $1 $3 }
 
 stmts:
     stmt                    { Located (lSpan $1) [$1] }
@@ -185,6 +187,7 @@ data Top e = Top
 data Definition e =
     DefData (Datatype e)
   | DefTypeclass (Typeclass e)
+  | DefInstance (Instance e)
   | DefConst (Located (Prop e))
   deriving (Eq,Show,Functor)
 
@@ -204,7 +207,10 @@ data Datatype e =
 data Typeclass e = Typeclass e (Located [Located (Prop e)])
   deriving (Eq,Show,Functor)
 
-data Constructor e = Constructor L.QN [Param e]
+data Instance e = Instance e (Located [Located (Prop e)])
+  deriving (Eq,Show,Functor)
+
+newtype Constructor e = Constructor e
   deriving (Eq,Show,Functor)
 
 data Param e =
@@ -218,7 +224,7 @@ data ExprF r =
   | ELiteralF Literal
   | ELetInF (Located [Located (Prop r)]) r
   | EWhereF r (Located [Located (Prop r)])
-  | ECaseOfF L.QN (Located [Located (Clause r)])
+  | ECaseOfF r (Located [Located (Clause r)])
   | EMatchF (Located [Located (Clause r)])
   | EListF (Located [r])
   | ETupleF (Located [r])
@@ -227,6 +233,7 @@ data ExprF r =
   | EArrowImplicitF r r
   | EDo (Located [Located (Stmt r)])
   | EHole
+  | EVar L.QN
   deriving (Eq,Show,Functor)
 
 data LocatedExprF r = LocatedExprF { leExprF :: ExprF r , leSpan :: Maybe Span }
