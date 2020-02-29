@@ -70,6 +70,7 @@ do        { (L.TKeyword L.Do , $$) }
 ';'       { (L.TSeparator L.Semicolon , $$) }
 '|'       { (L.TSeparator L.VerticalBar , $$) }
 
+%right '$'
 %nonassoc '<' '>'
 %left ':'
 %left '+' '-'
@@ -83,12 +84,11 @@ top:
 def:
     defData                 { DefData $1 }
   | defTypeclass            { DefTypeclass $1 }
-  | defInstance             { DefInstance  $1 }
+  | defInstance             { DefInstance $1 }
   | prop                    { DefConst $1 }
 
 defs:
     def                     { [$1] }
-  | def defs                { $1 : $2 }
   | def ';' defs            { $1 : $3 }
 
 defData:
@@ -103,10 +103,10 @@ constructors:
   | constructor '|' constructors  { $1 : $3 }
 
 defTypeclass:
-    typeclass expr '{' props '}'  { Typeclass $2 $4 }
+    typeclass expr where '{' props '}'  { Typeclass $2 $5 }
 
 defInstance:
-    instance expr '{' props '}'   { Instance $2 $4 }
+    instance expr where '{' props '}'   { Instance $2 $5 }
 
 literal:  
     nat                     { let (L.TNat b n , l) = $1 in (LNat b n , l) }
@@ -136,6 +136,7 @@ expr :: {LocatedExpr} :
   | expr '><' expr                { mkExpr $1 $3 $ EBinaryOpF Times $1 $3 }
   | expr '/' expr                 { mkExpr $1 $3 $ EBinaryOpF Div $1 $3 }
   | expr ':' expr                 { mkExpr $1 $3 $ EBinaryOpF Typing $1 $3 }
+  | expr '$' expr                 { mkExpr $1 $3 $ EBinaryOpF AppRight $1 $3 }
   | name                          { mkExpr $1 $1 $ EVar $ unLocated $1 }
 
 name:
@@ -146,15 +147,14 @@ prop :: {Located (Prop LocatedExpr)} :
   | expr ':' expr ';' expr '=' expr         { Located (composeSpan $1 $7) $ PropEqWithTypeAnnotation $1 $3 $5 $7 }
 
 props :: {Located [Located (Prop LocatedExpr)]} :
-    prop                    { Located (lSpan $1) [$1] }
-  | props ';'               { Located (composeSpan $1 $2) $ unLocated $1 }
+    prop                    { Located (composeSpan $1 $1) [$1] }
   | prop ';' props          { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 clause:
     expr '->' expr    { Located (composeSpan $1 $3) $ Clause $1 $3 }
 
 clauses:
-    clause                  { Located (lSpan $1) [$1] }
+    clause ';'              { Located (composeSpan $1 $2) [$1] }
   | clause ';' clauses      { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 list:
@@ -257,6 +257,7 @@ data BinaryOp =
   | Times
   | Div
   | Typing
+  | AppRight
   deriving (Eq,Show)
 
 data Literal =

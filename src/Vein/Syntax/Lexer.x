@@ -26,7 +26,7 @@ $sign = [\+\-]
 tokens :-
   $white+               ;
   "--" .* $             ;
-  "{-" .* "-}"          ;
+  "{-" (.|\n)* "-}"     ;
   $digit+               { hook $ TNat Decimal . readDec }
   "0x" $digit+          { hook $ TNat Hex . readHex . drop 2 }
   "0b" $digit+          { hook $ TNat Binary . readBin . drop 2 }
