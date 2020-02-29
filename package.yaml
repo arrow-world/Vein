@@ -1,8 +1,9 @@
 library:
   source-dirs: src
-  other-modules:
+  exposed-modules:
   - Vein.Syntax.Lexer
   - Vein.Syntax.Parser
+  - Vein.Core.Monoidal.Monoidal
 tests:
   vein-test:
     source-dirs: test
@@ -27,6 +28,7 @@ dependencies:
 - transformers
 - array
 - split
+- optparse-applicative
 name: vein
 version: 0.1.0.0
 extra-source-files:

@@ -23,6 +23,7 @@ import qualified Vein.Core.Module as M
 import qualified Vein.Core.Const as C
 import qualified Vein.Core.Monoidal.Monoidal as Mo
 import qualified Vein.Core.Monoidal.CompactClosed as CC
+import Vein.Util.Counter (Counter(..), count, runCounter)
 
 import qualified LLVM.AST as LA
 import qualified Data.Map.Lazy as Map
@@ -397,15 +398,6 @@ buildPreCode visitor initCode (Fix c) port =
 
     liftDoCoErr = maybe (throwError DoCoError) return 
 
-
-newtype Counter a = Counter (State Natural a)
-  deriving (Functor, Applicative, Monad)
-
-count :: Counter Natural
-count = Counter $ get <* modify (+1)
-
-runCounter :: Counter a -> (a , Natural)
-runCounter (Counter m) = runState m 0
 
 numbering :: Component -> Counter ComponentNumbered
 numbering (Fix c) =

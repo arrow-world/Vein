@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 8b3f4edbf406ad45e5e548af6234cb6ce1148c6892d1e697a97932b37d65af9b
+-- hash: 06b5b80346fd0bb50a07a5691dc07d450f1e56ac8bbf166b23b38edf79b4c4e5
 
 name:           vein
 version:        0.1.0.0
@@ -27,19 +27,22 @@ source-repository head
 
 library
   exposed-modules:
+      Vein.Syntax.Lexer
+      Vein.Syntax.Parser
+      Vein.Core.Monoidal.Monoidal
+  other-modules:
       Vein.Core.Const
       Vein.Core.Lam2Mon
       Vein.Core.Lambda.Expr
+      Vein.Core.Lambda.TypeCheck
       Vein.Core.Lambda.Types
       Vein.Core.Module
       Vein.Core.Monoidal.CompactClosed
       Vein.Core.Monoidal.Monad
-      Vein.Core.Monoidal.Monoidal
       Vein.Temporal.Event
       Vein.Temporal.Types
-  other-modules:
-      Vein.Syntax.Lexer
-      Vein.Syntax.Parser
+      Vein.Util.Counter
+      Paths_vein
   hs-source-dirs:
       src
   build-tools:
@@ -53,6 +56,7 @@ library
     , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
+    , optparse-applicative
     , prettyprinter
     , split
     , text
@@ -62,6 +66,7 @@ library
 executable vein-exe
   main-is: Main.hs
   other-modules:
+      Option
       Paths_vein
   hs-source-dirs:
       app
@@ -77,6 +82,7 @@ executable vein-exe
     , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
+    , optparse-applicative
     , prettyprinter
     , split
     , text
@@ -103,6 +109,7 @@ test-suite vein-test
     , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
+    , optparse-applicative
     , prettyprinter
     , split
     , text
