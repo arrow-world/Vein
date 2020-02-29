@@ -12,8 +12,8 @@ sinT f = (pureB (\t -> sin (2*pi*f*t))) >>>
   (Primitive (ToDTCV_FromBehaviorFloat :: ToDTCV_FromBehaviorFloat 44100))
 -}
 
-parse :: String -> Parser.Top Parser.LocatedExpr
-parse = Parser.parse . Lexer.alexScanTokens
+parse :: String -> Either String (Parser.Top Parser.LocatedExpr)
+parse s = Lexer.runAlex s Parser.parse
 
 main :: IO ()
 main = do

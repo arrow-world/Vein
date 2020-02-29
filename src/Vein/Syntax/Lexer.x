@@ -10,7 +10,7 @@ import Data.Char (digitToInt)
 import Data.List.Split (splitOn)
 }
 
-%wrapper "posn"
+%wrapper "monad"
 
 $digit = [0-9]
 $alphabet = [a-zA-Z]
@@ -26,55 +26,55 @@ tokens :-
   $white+               ;
   "--" .* $             ;
   "{-" .* "-}"          ;
-  $digit+               { locate $ TNat Decimal . readDec }
-  "0x" $digit+          { locate $ TNat Hex . readHex . drop 2 }
-  "0b" $digit+          { locate $ TNat Binary . readBin . drop 2 }
-  \' @char \'           { locate $ TChar . readChar . init . tail }
-  \" @char* \"          { locate $ TStr . readStr . init . tail }
-  data                  { locate $ const $ TKeyword Data }
-  let                   { locate $ const $ TKeyword Let }
-  in                    { locate $ const $ TKeyword In }
-  case                  { locate $ const $ TKeyword Case }
-  of                    { locate $ const $ TKeyword Of }
-  match                 { locate $ const $ TKeyword Match }
-  where                 { locate $ const $ TKeyword Where }
-  import                { locate $ const $ TKeyword Import }
-  module                { locate $ const $ TKeyword Module }
-  typeclass             { locate $ const $ TKeyword Typeclass }
-  do                    { locate $ const $ TKeyword Do }
-  @fqn                  { locate $ TQN . readQN }
-  "="                   { locate $ const $ TSymbol Def }
-  "=="                  { locate $ const $ TSymbol Eq }
-  "/="                  { locate $ const $ TSymbol Neq }
-  "<"                   { locate $ const $ TSymbol LessThan }
-  ">"                   { locate $ const $ TSymbol GreaterThan }
-  "<=" | "≦"            { locate $ const $ TSymbol LessThanEq }
-  ">=" | "≧"            { locate $ const $ TSymbol GreaterThanEq }
-  "+"                   { locate $ const $ TSymbol Plus }
-  "-"                   { locate $ const $ TSymbol Minus }
-  "><" | "×"            { locate $ const $ TSymbol Times }
-  "/"                   { locate $ const $ TSymbol Div }
-  "~"                   { locate $ const $ TSymbol Inverse }
-  "->"                  { locate $ const $ TSymbol Arrow }
-  "\\"                  { locate $ const $ TSymbol Lambda }
-  "*"                   { locate $ const $ TSymbol Asterisk }
-  "^"                   { locate $ const $ TSymbol Power }
-  "?"                   { locate $ const $ TSymbol Hole }
-  "_"                   { locate $ const $ TSymbol Placeholder }
-  ":"                   { locate $ const $ TSymbol Typing }
-  "."                   { locate $ const $ TSymbol Compose }
-  "$"                   { locate $ const $ TSymbol AppRight }
-  "!"                   { locate $ const $ TSymbol LiftFunctor }
-  "<-"                  { locate $ const $ TSymbol Assign }
-  "("                   { locate $ const $ TParen Round LeftParen }
-  ")"                   { locate $ const $ TParen Round RightParen }
-  "{"                   { locate $ const $ TParen Curly LeftParen }
-  "}"                   { locate $ const $ TParen Curly RightParen }
-  "["                   { locate $ const $ TParen Square LeftParen }
-  "]"                   { locate $ const $ TParen Square RightParen }
-  ","                   { locate $ const $ TSeparator Comma }
-  ";"                   { locate $ const $ TSeparator Semicolon }
-  "|"                   { locate $ const $ TSeparator VerticalBar }
+  $digit+               { hook $ TNat Decimal . readDec }
+  "0x" $digit+          { hook $ TNat Hex . readHex . drop 2 }
+  "0b" $digit+          { hook $ TNat Binary . readBin . drop 2 }
+  \' @char \'           { hook $ TChar . readChar . init . tail }
+  \" @char* \"          { hook $ TStr . readStr . init . tail }
+  data                  { hook $ const $ TKeyword Data }
+  let                   { hook $ const $ TKeyword Let }
+  in                    { hook $ const $ TKeyword In }
+  case                  { hook $ const $ TKeyword Case }
+  of                    { hook $ const $ TKeyword Of }
+  match                 { hook $ const $ TKeyword Match }
+  where                 { hook $ const $ TKeyword Where }
+  import                { hook $ const $ TKeyword Import }
+  module                { hook $ const $ TKeyword Module }
+  typeclass             { hook $ const $ TKeyword Typeclass }
+  do                    { hook $ const $ TKeyword Do }
+  @fqn                  { hook $ TQN . readQN }
+  "="                   { hook $ const $ TSymbol Def }
+  "=="                  { hook $ const $ TSymbol Eq }
+  "/="                  { hook $ const $ TSymbol Neq }
+  "<"                   { hook $ const $ TSymbol LessThan }
+  ">"                   { hook $ const $ TSymbol GreaterThan }
+  "<=" | "≦"            { hook $ const $ TSymbol LessThanEq }
+  ">=" | "≧"            { hook $ const $ TSymbol GreaterThanEq }
+  "+"                   { hook $ const $ TSymbol Plus }
+  "-"                   { hook $ const $ TSymbol Minus }
+  "><" | "×"            { hook $ const $ TSymbol Times }
+  "/"                   { hook $ const $ TSymbol Div }
+  "~"                   { hook $ const $ TSymbol Inverse }
+  "->"                  { hook $ const $ TSymbol Arrow }
+  "\\"                  { hook $ const $ TSymbol Lambda }
+  "*"                   { hook $ const $ TSymbol Asterisk }
+  "^"                   { hook $ const $ TSymbol Power }
+  "?"                   { hook $ const $ TSymbol Hole }
+  "_"                   { hook $ const $ TSymbol Placeholder }
+  ":"                   { hook $ const $ TSymbol Typing }
+  "."                   { hook $ const $ TSymbol Compose }
+  "$"                   { hook $ const $ TSymbol AppRight }
+  "!"                   { hook $ const $ TSymbol LiftFunctor }
+  "<-"                  { hook $ const $ TSymbol Assign }
+  "("                   { hook $ const $ TParen Round LeftParen }
+  ")"                   { hook $ const $ TParen Round RightParen }
+  "{"                   { hook $ const $ TParen Curly LeftParen }
+  "}"                   { hook $ const $ TParen Curly RightParen }
+  "["                   { hook $ const $ TParen Square LeftParen }
+  "]"                   { hook $ const $ TParen Square RightParen }
+  ","                   { hook $ const $ TSeparator Comma }
+  ";"                   { hook $ const $ TSeparator Semicolon }
+  "|"                   { hook $ const $ TSeparator VerticalBar }
 
 {
 data Token =
@@ -87,15 +87,24 @@ data Token =
   | TSymbol Symbol
   | TQN QN
   | TSeparator Separator
+  | TEof
   deriving (Eq,Show)
 
-data Span = Span { spanBegin :: AlexPosn , spanLength :: Natural }
+data Span = Span { spanBegin :: AlexPosn , spanEnd :: Maybe Natural }
   deriving (Eq,Show)
 
-type LocatedToken = (Token , Span)
+spanLength :: Span -> Maybe Natural
+spanLength (Span posn end) = do
+  end' <- end
+  return $ end' - (absAlexPosn posn)
 
-locate :: (String -> Token) -> AlexPosn -> String -> LocatedToken
-locate f loc s = ( f s , Span loc $ fromIntegral $ length s )
+absAlexPosn :: AlexPosn -> Natural
+absAlexPosn (AlexPn n _ _) = fromIntegral n
+
+type LocatedToken = (Token , Maybe Span)
+
+hook :: (String -> Token) -> AlexInput -> Int -> Alex LocatedToken
+hook f (pos,_,_,input) _ = return ( f input , Just $ Span pos $ Just $ absAlexPosn pos + (fromIntegral $ length input) )
 
 data QN =
     QN String
@@ -169,4 +178,5 @@ consumeChar s = case s of
         '\\' -> '\\'
   c : s -> (c,s)
 
+alexEOF = return (TEof,Nothing)
 }
