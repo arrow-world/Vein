@@ -80,22 +80,26 @@ do        { (L.TKeyword L.Do , $$) }
 %%
 
 top:
-    defs                    { Top $1 }
+                                        { Top [] }
+  | prop_stmts                          { Top $1 }
 
-def:
-    defData                 { DefData $1 }
-  | defTypeclass            { DefTypeclass $1 }
-  | defInstance             { DefInstance $1 }
-  | prop                    { DefConst $1 }
-
-defs:
-    def                     { [$1] }
-  | def ';'                 { [$1] }
-  | def ';' defs            { $1 : $3 }
+prop_stmts:
+    ';'                                 { [] }
+  | prop_needs_separator                { [$1] }
+  | prop_unneeds_separator              { [$1] }
+  | prop_needs_separator ';'            { [$1] }
+  | ';' prop_stmts                      { $2 }
+  | prop_unneeds_separator prop_stmts   { $1 : $2 }
+  | prop_needs_separator ';' prop_stmts { $1 : $3 }
   
-defData:
-    data expr1 params_props       { uncurry (GADT $2) $3 }
-  | data expr '=' constructors    { ADT $2 $4 }
+prop_unneeds_separator:
+    defTypeclass                        { DefTypeclass $1 }
+  | defInstance                         { DefInstance $1 }
+  | data expr1 params_props             { DefData $ uncurry (GADT $2) $3 }
+
+prop_needs_separator:
+    data expr '=' constructors          { DefData $ ADT $2 $4 }
+  | prop                                { DefConst $1 }
 
 constructor:
     expr                          { Constructor $1 }
@@ -135,7 +139,7 @@ expr4:
   | do '{' stmts '}'              { mkExpr $1 $4 $ EDo $3 }
 
 clause:
-    pat '->' expr               { Located (composeSpan $1 $3) $ Clause $1 $3 }
+    pat '->' expr_with_where      { Located (composeSpan $1 $3) $ Clause $1 $3 }
 
 clauses:
     clause ';'              { Located (composeSpan $1 $2) [$1] }
@@ -173,7 +177,7 @@ expr1 :: {LocatedExpr} :
     name                          { mkExpr $1 $1 $ EVar $ unLocated $1 }
   | literal                       { mkExpr $1 $1 $ ELiteralF $ fst $1 }
   | '~' expr1                     { mkExpr $1 $2 $ EUnaryOpF Inverse $2 }
-  | '(' expr ')'                  { mkExpr $1 $3 $ leExprF $ unFix $2 }
+  | '(' expr_with_typing ')'      { mkExpr $1 $3 $ leExprF $ unFix $2 }
   | list                          { mkExpr $1 $1 $ EListF $1 }
   | tuple                         { mkExpr $1 $1 $ ETupleF $1 }
   | '?'                           { mkExpr $1 $1 $ EHole }
@@ -189,8 +193,9 @@ name:
 
 
 prop :: {Located (Prop LocatedExpr)} :
-    expr '=' expr                           { Located (composeSpan $1 $3) $ PropEq $1 $3 }
-  | expr ':' expr ';' expr '=' expr         { Located (composeSpan $1 $7) $ PropEqWithTypeAnnotation $1 $3 $5 $7 }
+    expr '=' expr_with_where                { Located (composeSpan $1 $3) $ PropEq $1 $3 }
+  | expr ':' expr_with_where                { Located (composeSpan $1 $3) $ PropTypeAnnotation $1 $3 }
+--  | expr ':' expr ';' expr '=' expr       { Located (composeSpan $1 $7) $ PropEqWithTypeAnnotation $1 $3 $5 $7 }
 
 props :: {Located [Located (Prop LocatedExpr)]} :
     prop                    { Located (composeSpan $1 $1) [$1] }
@@ -237,6 +242,7 @@ data Definition e =
 data Prop e =
     PropEq e e
   | PropEqWithTypeAnnotation e e e e
+  | PropTypeAnnotation e e
   deriving (Eq,Show,Functor)
 
 data Clause e = Clause e e
