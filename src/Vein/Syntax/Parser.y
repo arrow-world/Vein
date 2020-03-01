@@ -11,6 +11,7 @@ import Vein.Syntax.Lexer (Span(..))
 import Control.Monad.Error
 import Numeric.Natural (Natural)
 import Data.Fix (Fix(..))
+import Data.Tuple (swap)
 }
 
 %name parse
@@ -78,7 +79,6 @@ do        { (L.TKeyword L.Do , $$) }
 
 %%
 
-{-
 top:
     defs                    { Top $1 }
 
@@ -90,10 +90,11 @@ def:
 
 defs:
     def                     { [$1] }
+  | def ';'                 { [$1] }
   | def ';' defs            { $1 : $3 }
-
+  
 defData:
-    data expr '{' props '}'       { GADT $2 $4 }
+    data expr1 params_props       { uncurry (GADT $2) $3 }
   | data expr '=' constructors    { ADT $2 $4 }
 
 constructor:
@@ -104,13 +105,14 @@ constructors:
   | constructor '|' constructors  { $1 : $3 }
 
 defTypeclass:
-    typeclass expr '{' props '}'  { Typeclass $2 $4 }
-
+    typeclass expr1 params_props  { uncurry (Typeclass $2) $3 }
 
 defInstance:
-    instance expr '{' props '}'   { Instance $2 $4 }
+    instance expr1 params_props   { uncurry (Instance $2) $3 }
 
--}
+params_props :: {(Located [Located (Param LocatedExpr)] , Located [Located (Prop LocatedExpr)])} :
+    '{' props '}'                 { ( Located (composeSpan $1 $3) [] , $2 ) }
+  | param params_props            { swap $ fmap (\params -> Located (composeSpan $1 params) $ $1 : unLocated params) $ swap $2 }
 
 expr_with_typing:
     expr                          { $1 }
@@ -185,12 +187,14 @@ literal:
 name:
     qn                      { let (L.TQN qn , l) = $1 in Located l qn }
 
+
 prop :: {Located (Prop LocatedExpr)} :
     expr '=' expr                           { Located (composeSpan $1 $3) $ PropEq $1 $3 }
   | expr ':' expr ';' expr '=' expr         { Located (composeSpan $1 $7) $ PropEqWithTypeAnnotation $1 $3 $5 $7 }
 
 props :: {Located [Located (Prop LocatedExpr)]} :
     prop                    { Located (composeSpan $1 $1) [$1] }
+  | prop ';'                { Located (composeSpan $1 $2) [$1] }
   | prop ';' props          { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 
@@ -239,14 +243,14 @@ data Clause e = Clause e e
   deriving (Eq,Show,Functor)
 
 data Datatype e =
-    GADT e (Located [Located (Prop e)])
+    GADT e (Located [Located (Param e)]) (Located [Located (Prop e)])
   | ADT e [Constructor e]
   deriving (Eq,Show,Functor)
 
-data Typeclass e = Typeclass e (Located [Located (Prop e)])
+data Typeclass e = Typeclass e (Located [Located (Param e)]) (Located [Located (Prop e)])
   deriving (Eq,Show,Functor)
 
-data Instance e = Instance e (Located [Located (Prop e)])
+data Instance e = Instance e (Located [Located (Param e)]) (Located [Located (Prop e)])
   deriving (Eq,Show,Functor)
 
 newtype Constructor e = Constructor e
