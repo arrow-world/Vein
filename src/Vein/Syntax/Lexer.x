@@ -68,6 +68,8 @@ tokens :-
   "$"                   { hook $ const $ TSymbol AppRight }
   "!"                   { hook $ const $ TSymbol LiftFunctor }
   "<-"                  { hook $ const $ TSymbol Assign }
+  "`"                   { hook $ const $ TSymbol Infixator }
+  ">>"                  { hook $ const $ TSymbol ComposeRight }
   "("                   { hook $ const $ TParen Round LeftParen }
   ")"                   { hook $ const $ TParen Round RightParen }
   "{"                   { hook $ const $ TParen Curly LeftParen }
@@ -141,7 +143,8 @@ data Keyword = Data | Let | In | Case | Of | Match | Where | Module | Import | T
 data Symbol =
     Def | Eq | Neq | LessThan | GreaterThan | LessThanEq | GreaterThanEq
   | Plus | Minus | Times | Div | Inverse | Arrow | Lambda
-  | Asterisk | Power | Hole | Typing | Compose | AppRight | LiftFunctor | ComposeRight | Assign | Placeholder
+  | Asterisk | Power | Hole | Typing | Compose | AppRight | LiftFunctor
+  | ComposeRight | Assign | Placeholder | Infixator
   | UserDef String
   deriving (Eq,Show)
 

@@ -61,6 +61,8 @@ do        { (L.TKeyword L.Do , $$) }
 '$'       { (L.TSymbol L.AppRight , $$) }
 '!'       { (L.TSymbol L.LiftFunctor , $$) }
 '<-'      { (L.TSymbol L.Assign , $$) }
+'`'       { (L.TSymbol L.Infixator , $$) }
+'>>'      { (L.TSymbol L.ComposeRight , $$) }
 '('       { (L.TParen L.Round L.LeftParen , $$) }
 ')'       { (L.TParen L.Round L.RightParen , $$) }
 '{'       { (L.TParen L.Curly L.LeftParen , $$) }
@@ -71,9 +73,11 @@ do        { (L.TKeyword L.Do , $$) }
 ';'       { (L.TSeparator L.Semicolon , $$) }
 '|'       { (L.TSeparator L.VerticalBar , $$) }
 
-%right '$'
-%nonassoc '<' '>' '<=' '>=' '=='
 %left ':'
+%right '$'
+%left '>>'
+%right '.'
+%nonassoc '<' '>' '<=' '>=' '==' '<-'
 %left '+' '-'
 %left '><' '/'
 
@@ -146,13 +150,22 @@ clauses:
   | clause ';' clauses      { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 expr3:
-    expr21                                      { $1 }
-  | expr21 '->' expr3                           { mkExpr $1 $3 $ mkArrow (Located (toSpan $1) $ Param $1) $3 }
+    expr22                                      { $1 }
+  | expr22 '->' expr3                           { mkExpr $1 $3 $ mkArrow (Located (toSpan $1) $ Param $1) $3 }
   | '{' expr_with_typing '}' '->' expr3         { mkExpr $1 $5 $ mkArrow (Located (composeSpan $1 $3) $ ParamImplicit $2) $5 }
 
 
 pat:
+    expr22                          { $1 }
+
+
+expr22:
     expr21                          { $1 }
+  | expr22 infixator expr21         { mkExpr $1 $3 $ EBinaryOpF (Infixated $2) $1 $3 }
+
+infixator:
+    '`' expr21 '`'                  { mkExpr $1 $3 $ leExprF $ unFix $2 }
+
 
 expr21:
     expr2                           { $1 }
@@ -161,6 +174,8 @@ expr21:
   | expr21 '><' expr21              { mkExpr $1 $3 $ EBinaryOpF Times $1 $3 }
   | expr21 '/' expr21               { mkExpr $1 $3 $ EBinaryOpF Div $1 $3 }
   | expr21 '$' expr21               { mkExpr $1 $3 $ EBinaryOpF AppRight $1 $3 }
+  | expr21 '.' expr21               { mkExpr $1 $3 $ EBinaryOpF Compose $1 $3 }
+  | expr21 '>>' expr21              { mkExpr $1 $3 $ EBinaryOpF ComposeRight $1 $3 }
 
 expr2:
     expr1                           { $1 }
@@ -272,7 +287,7 @@ data Param e =
 data ExprF r =
     EApp r [Located (Param r)]
   | EUnaryOpF UnaryOp r
-  | EBinaryOpF BinaryOp r r
+  | EBinaryOpF (BinaryOp r) r r
   | ELiteralF Literal
   | ELetInF (Located [Located (Prop r)]) r
   | EWhereF r (Located [Located (Prop r)])
@@ -299,7 +314,7 @@ data UnaryOp =
     Inverse
   deriving (Eq,Show)
 
-data BinaryOp =
+data BinaryOp e =
     Arrow
   | App
   | AppImplicit
@@ -309,7 +324,10 @@ data BinaryOp =
   | Div
   | Typing
   | AppRight
-  deriving (Eq,Show)
+  | Compose
+  | ComposeRight
+  | Infixated e
+  deriving (Eq,Show,Functor)
 
 data Literal =
     LNat L.Base Natural
