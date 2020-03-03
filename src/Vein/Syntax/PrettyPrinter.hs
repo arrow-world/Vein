@@ -122,7 +122,8 @@ instance Pretty e => Pretty (P.Definition e) where
 instance Pretty e => Pretty (P.Datatype e) where
   pretty = ("data" <+>) . \case
     P.GADT e params props -> prettyExprParamsProps e params props
-    P.ADT e cs -> "=" <+> pretty e <+> align (encloseSep mempty mempty ("|" <> space) $ map ((<> space) . pretty) cs)
+    P.ADT e cs -> pretty e <+> "="
+      <+> group ( flatAlt (line <> "  ") "" <> align (encloseSep (flatAlt "  " "") "" (flatAlt "| " " | ") $ map pretty cs) )
 
 instance Pretty e => Pretty (P.Constructor e) where
   pretty (P.Constructor e) = pretty e
