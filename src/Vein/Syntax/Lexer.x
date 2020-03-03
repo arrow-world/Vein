@@ -70,6 +70,7 @@ tokens :-
   "<-"                  { hook $ const $ TSymbol Assign }
   "`"                   { hook $ const $ TSymbol Infixator }
   ">>"                  { hook $ const $ TSymbol ComposeRight }
+  "=>"                  { hook $ const $ TSymbol Constraint }
   "("                   { hook $ const $ TParen Round LeftParen }
   ")"                   { hook $ const $ TParen Round RightParen }
   "{"                   { hook $ const $ TParen Curly LeftParen }
@@ -144,7 +145,7 @@ data Symbol =
     Def | Eq | Neq | LessThan | GreaterThan | LessThanEq | GreaterThanEq
   | Plus | Minus | Times | Div | Inverse | Arrow | Lambda
   | Asterisk | Power | Hole | Typing | Compose | AppRight | LiftFunctor
-  | ComposeRight | Assign | Placeholder | Infixator
+  | ComposeRight | Assign | Placeholder | Infixator | Constraint
   | UserDef String
   deriving (Eq,Show)
 

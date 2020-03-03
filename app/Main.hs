@@ -3,8 +3,13 @@ module Main where
 import Vein.Core.Monoidal.Monoidal
 import qualified Vein.Syntax.Lexer as Lexer
 import qualified Vein.Syntax.Parser as Parser
+import qualified Vein.Syntax.PrettyPrinter as PrettyPrinter
 
 import qualified Option as Option
+
+import Data.Text.Prettyprint.Doc (pretty)
+import Data.Text.Prettyprint.Doc.Util (putDocW)
+import System.Console.Terminal.Size as TerminalSize
 
 {-
 sinT : Double -> SF (Behavior Double) (DTCV 44100)
@@ -26,6 +31,11 @@ main = do
   let verbose = Option.verbose opt
 
   srcs <- traverse readFile inputFiles
-  print $ map parse srcs
+
+  width <- TerminalSize.size >>= return . maybe 80 TerminalSize.width
+
+  flip traverse srcs $ \src -> either print id $ do
+    src' <- parse src
+    return $ putDocW width $ pretty src'
 
   return ()

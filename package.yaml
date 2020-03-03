@@ -3,7 +3,10 @@ library:
   exposed-modules:
   - Vein.Syntax.Lexer
   - Vein.Syntax.Parser
+  - Vein.Syntax.PrettyPrinter
   - Vein.Core.Monoidal.Monoidal
+  default-extensions:
+  - LambdaCase
 tests:
   vein-test:
     source-dirs: test
@@ -29,6 +32,7 @@ dependencies:
 - array
 - split
 - optparse-applicative
+- terminal-size
 name: vein
 version: 0.1.0.0
 extra-source-files:

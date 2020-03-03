@@ -63,6 +63,7 @@ do        { (L.TKeyword L.Do , $$) }
 '<-'      { (L.TSymbol L.Assign , $$) }
 '`'       { (L.TSymbol L.Infixator , $$) }
 '>>'      { (L.TSymbol L.ComposeRight , $$) }
+'=>'      { (L.TSymbol L.Constraint , $$) }
 '('       { (L.TParen L.Round L.LeftParen , $$) }
 ')'       { (L.TParen L.Round L.RightParen , $$) }
 '{'       { (L.TParen L.Curly L.LeftParen , $$) }
@@ -303,7 +304,7 @@ data ExprF r =
   deriving (Eq,Show,Functor)
 
 data LocatedExprF r = LocatedExprF { leExprF :: ExprF r , leSpan :: Maybe Span }
-  deriving (Eq,Show)
+  deriving (Eq,Show,Functor)
 
 type LocatedExpr = Fix LocatedExprF
 
