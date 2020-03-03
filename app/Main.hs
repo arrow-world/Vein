@@ -34,8 +34,11 @@ main = do
 
   width <- TerminalSize.size >>= return . maybe 80 TerminalSize.width
 
-  flip traverse srcs $ \src -> either print id $ do
+  flip traverse (zip inputFiles srcs) $ \(file,src) -> either print id $ do
     src' <- parse src
-    return $ putDocW width $ pretty src'
+    return $ do
+      putStr $ "File: " ++ file ++ "\n\n"
+      putDocW width $ pretty src'
+      putStr "\n\n\n"
 
   return ()
