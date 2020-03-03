@@ -75,9 +75,11 @@ do        { (L.TKeyword L.Do , $$) }
 '|'       { (L.TSeparator L.VerticalBar , $$) }
 
 %left ':'
+
 %right '$'
 %left '>>'
 %right '.'
+
 %nonassoc '<' '>' '<=' '>=' '==' '<-'
 %left '+' '-'
 %left '><' '/'
@@ -151,13 +153,20 @@ clauses:
   | clause ';' clauses      { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 expr3:
-    expr22                                      { $1 }
-  | expr22 '->' expr3                           { mkExpr $1 $3 $ mkArrow (Located (toSpan $1) $ Param $1) $3 }
+    expr23                                      { $1 }
+  | expr23 '->' expr3                           { mkExpr $1 $3 $ mkArrow (Located (toSpan $1) $ Param $1) $3 }
   | '{' expr_with_typing '}' '->' expr3         { mkExpr $1 $5 $ mkArrow (Located (composeSpan $1 $3) $ ParamImplicit $2) $5 }
 
 
 pat:
+    expr23                          { $1 }
+
+
+expr23:
     expr22                          { $1 }
+  | expr23 '$' expr23               { mkExpr $1 $3 $ EBinaryOpF AppRight $1 $3 }
+  | expr23 '.' expr23               { mkExpr $1 $3 $ EBinaryOpF Compose $1 $3 }
+  | expr23 '>>' expr23              { mkExpr $1 $3 $ EBinaryOpF ComposeRight $1 $3 }
 
 
 expr22:
@@ -174,9 +183,6 @@ expr21:
   | expr21 '-' expr21               { mkExpr $1 $3 $ EBinaryOpF Minus $1 $3 }
   | expr21 '><' expr21              { mkExpr $1 $3 $ EBinaryOpF Times $1 $3 }
   | expr21 '/' expr21               { mkExpr $1 $3 $ EBinaryOpF Div $1 $3 }
-  | expr21 '$' expr21               { mkExpr $1 $3 $ EBinaryOpF AppRight $1 $3 }
-  | expr21 '.' expr21               { mkExpr $1 $3 $ EBinaryOpF Compose $1 $3 }
-  | expr21 '>>' expr21              { mkExpr $1 $3 $ EBinaryOpF ComposeRight $1 $3 }
 
 expr2:
     expr1                           { $1 }
