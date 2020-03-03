@@ -199,6 +199,7 @@ expr1 :: {LocatedExpr} :
   | list                          { mkExpr $1 $1 $ EListF $1 }
   | tuple                         { mkExpr $1 $1 $ ETupleF $1 }
   | '?'                           { mkExpr $1 $1 $ EHole }
+  | '_'                           { mkExpr $1 $1 $ EPlaceholder }
 
 literal:  
     nat                     { let (L.TNat b n , l) = $1 in (LNat b n , l) }
@@ -300,6 +301,7 @@ data ExprF r =
   | EArrowF [Located (Param r)] r
   | EDo (Located [Located (Stmt r)])
   | EHole
+  | EPlaceholder
   | EVar L.QN
   deriving (Eq,Show,Functor)
 

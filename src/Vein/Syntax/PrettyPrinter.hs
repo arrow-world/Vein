@@ -32,7 +32,8 @@ instance Pretty r => Pretty (P.ExprF r) where
     P.ELamF e1 e2 -> "\\" <> pretty e1 <+> "->" <+> pretty e2 
     P.EArrowF es e -> hsep (map ((<+> "->") . pretty) es) <+> pretty e
     P.EDo ss -> "do {" <+> stmts (unLocated ss) <+> "}"
-    P.EHole -> "_"
+    P.EHole -> "?"
+    P.EPlaceholder -> "_"
     P.EVar name -> pretty name
 
     P.EBinaryOpF op e1 e2 -> parens $ case op of
