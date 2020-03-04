@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: df71855462e40ad4cad2238758739c20aef20ab97cc06ba68bb62833afa6ea11
+-- hash: c6d12ffeb815b27fe4d4dfa89a5d9b6bd064e205aeb2dd0c7af4079e131bdc24
 
 name:           vein
 version:        0.1.0.0
@@ -30,6 +30,7 @@ library
       Vein.Syntax.Lexer
       Vein.Syntax.Parser
       Vein.Syntax.PrettyPrinter
+      Vein.Syntax.AST
       Vein.Core.Monoidal.Monoidal
   other-modules:
       Vein.Core.Const
@@ -55,6 +56,7 @@ library
     , base
     , containers
     , data-fix
+    , hashable
     , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
@@ -64,6 +66,7 @@ library
     , terminal-size
     , text
     , transformers
+    , unordered-containers
   default-language: Haskell2010
 
 executable vein-exe
@@ -82,6 +85,7 @@ executable vein-exe
     , base
     , containers
     , data-fix
+    , hashable
     , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
@@ -91,6 +95,7 @@ executable vein-exe
     , terminal-size
     , text
     , transformers
+    , unordered-containers
     , vein
   default-language: Haskell2010
 
@@ -110,6 +115,7 @@ test-suite vein-test
     , base
     , containers
     , data-fix
+    , hashable
     , llvm-hs >=8.0.0
     , llvm-hs-pure
     , mtl
@@ -119,5 +125,6 @@ test-suite vein-test
     , terminal-size
     , text
     , transformers
+    , unordered-containers
     , vein
   default-language: Haskell2010

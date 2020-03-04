@@ -3,6 +3,7 @@ module Main where
 import Vein.Core.Monoidal.Monoidal
 import qualified Vein.Syntax.Lexer as Lexer
 import qualified Vein.Syntax.Parser as Parser
+import qualified Vein.Syntax.AST as AST
 import qualified Vein.Syntax.PrettyPrinter as PrettyPrinter
 
 import qualified Option as Option
@@ -17,7 +18,7 @@ sinT f = (pureB (\t -> sin (2*pi*f*t))) >>>
   (Primitive (ToDTCV_FromBehaviorFloat :: ToDTCV_FromBehaviorFloat 44100))
 -}
 
-parse :: String -> Either String (Parser.Top Parser.LocatedExpr)
+parse :: String -> Either String (AST.Top AST.LocatedExpr)
 parse s = Lexer.runAlex s Parser.parse
 
 main :: IO ()

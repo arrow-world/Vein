@@ -7,6 +7,7 @@ module Vein.Syntax.Parser where
 
 import qualified Vein.Syntax.Lexer as L
 import Vein.Syntax.Lexer (Span(..))
+import Vein.Syntax.AST
 
 import Control.Monad.Error
 import Numeric.Natural (Natural)
@@ -252,104 +253,6 @@ stmts:
   | stmt ';' stmts          { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 {
-data Top e = Top
-  { definitions :: [Definition e]
-  }
-  deriving (Eq,Show,Functor)
-
-data Definition e =
-    DefData (Datatype e)
-  | DefTypeclass (Typeclass e)
-  | DefInstance (Instance e)
-  | DefConst (Located (Prop e))
-  deriving (Eq,Show,Functor)
-
-data Prop e =
-    PropEq e e
-  | PropEqWithTypeAnnotation e e e e
-  | PropTypeAnnotation e e
-  deriving (Eq,Show,Functor)
-
-data Clause e = Clause e e
-  deriving (Eq,Show,Functor)
-
-data Datatype e =
-    GADT e (Located [Located (Param e)]) (Located [Located (Prop e)])
-  | ADT e [Constructor e]
-  deriving (Eq,Show,Functor)
-
-data Typeclass e = Typeclass e (Located [Located (Param e)]) (Located [Located (Prop e)])
-  deriving (Eq,Show,Functor)
-
-data Instance e = Instance e (Located [Located (Param e)]) (Located [Located (Prop e)])
-  deriving (Eq,Show,Functor)
-
-newtype Constructor e = Constructor e
-  deriving (Eq,Show,Functor)
-
-data Param e =
-    Param e
-  | ParamImplicit e
-  deriving (Eq,Show,Functor)
-
-data ExprF r =
-    EApp r [Located (Param r)]
-  | EUnaryOpF UnaryOp r
-  | EBinaryOpF (BinaryOp r) r r
-  | ELiteralF Literal
-  | ELetInF (Located [Located (Prop r)]) r
-  | EWhereF r (Located [Located (Prop r)])
-  | ECaseOfF r (Located [Located (Clause r)])
-  | EMatchF (Located [Located (Clause r)])
-  | EListF (Located [r])
-  | ETupleF (Located [r])
-  | ELamF r r
-  | EArrowF [Located (Param r)] r
-  | EDo (Located [Located (Stmt r)])
-  | EHole
-  | EPlaceholder
-  | EVar L.QN
-  deriving (Eq,Show,Functor)
-
-data LocatedExprF r = LocatedExprF { leExprF :: ExprF r , leSpan :: Maybe Span }
-  deriving (Eq,Show,Functor)
-
-type LocatedExpr = Fix LocatedExprF
-
-data Located a = Located { lSpan :: Maybe Span , unLocated :: a }
-  deriving (Eq,Show,Functor)
-
-data UnaryOp =
-    Inverse
-  deriving (Eq,Show)
-
-data BinaryOp e =
-    Arrow
-  | App
-  | AppImplicit
-  | Plus
-  | Minus
-  | Times
-  | Div
-  | Typing
-  | AppRight
-  | Compose
-  | ComposeRight
-  | Infixated e
-  deriving (Eq,Show,Functor)
-
-data Literal =
-    LNat L.Base Natural
-  | LFP L.Base L.FloatingPoint
-  | LStr String
-  | LChar Char
-  deriving (Eq,Show)
-
-data Stmt e =
-    Stmt e
-  | StmtAssign e e
-  deriving (Eq,Show,Functor)
-
 class HasSpan a where
   toSpan :: a -> Maybe Span
 

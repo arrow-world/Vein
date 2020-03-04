@@ -4,6 +4,7 @@ library:
   - Vein.Syntax.Lexer
   - Vein.Syntax.Parser
   - Vein.Syntax.PrettyPrinter
+  - Vein.Syntax.AST
   - Vein.Core.Monoidal.Monoidal
   default-extensions:
   - LambdaCase
@@ -33,6 +34,8 @@ dependencies:
 - split
 - optparse-applicative
 - terminal-size
+- hashable
+- unordered-containers
 name: vein
 version: 0.1.0.0
 extra-source-files:

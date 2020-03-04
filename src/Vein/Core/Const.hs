@@ -21,7 +21,7 @@ import qualified LLVM.AST.Name as LAN
 import qualified LLVM.AST.IntegerPredicate as IntegerPredicate
 import qualified LLVM.AST.Constant as LAC
 import qualified Data.Text as T
-import qualified Data.Map.Lazy as Map
+import qualified Data.HashMap.Lazy as Map
 import Data.Char (isAscii)
 import Data.String (fromString)
 import Data.Word (Word32)

@@ -26,6 +26,7 @@ import qualified Vein.Core.Monoidal.CompactClosed as CC
 import Vein.Util.Counter (Counter(..), count, runCounter)
 
 import qualified LLVM.AST as LA
+import qualified Data.HashMap.Lazy as HashMap
 import qualified Data.Map.Lazy as Map
 import LLVM.AST.Operand ( Operand (ConstantOperand) )
 import LLVM.IRBuilder.Monad ( MonadIRBuilder , block , emitBlockStart , fresh , IRBuilder )
@@ -536,7 +537,7 @@ expandType x = case x of
 
   Mo.Object (CC.D (TypeValue ctor params)) -> do
     env <- ask
-    case Map.lookup ctor env of
+    case HashMap.lookup ctor env of
       Just (DefTypeAlias t) -> pure $ t params
       Just (DefComponent _) -> throwError UnexpectedComponentDefinition
       Nothing -> throwError Undefined
