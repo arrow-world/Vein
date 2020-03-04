@@ -11,6 +11,7 @@ import GHC.Generics (Generic)
 import Data.Hashable (Hashable)
 import Control.Monad.Trans (MonadTrans)
 import Control.Monad.Trans.State.Lazy (StateT(runStateT))
+import qualified Control.Monad.Trans.State.Lazy as State
 
 data Name = Name T.Text
   deriving (Eq, Show, Generic)
@@ -42,8 +43,21 @@ textsToQN = QN . (map Name)
 
 type ModuleMap a = HashMap.HashMap QN a
 
+
 newtype ModuleStateT a m b = ModuleStateT (StateT (ModuleMap a) m b)
   deriving (Functor,Applicative,Monad,MonadTrans)
 
 runMonadStateT :: ModuleStateT a m b -> ModuleMap a -> m (b , ModuleMap a)
 runMonadStateT (ModuleStateT s) = runStateT s
+
+get :: Monad m => ModuleStateT a m (ModuleMap a)
+get = ModuleStateT State.get
+
+modify :: Monad m => (ModuleMap a -> ModuleMap a) -> ModuleStateT a m ()
+modify = ModuleStateT . State.modify
+
+lookup :: Monad m => QN -> ModuleStateT a m (Maybe a)
+lookup k = HashMap.lookup k <$> get
+
+insert :: Monad m => QN -> a -> ModuleStateT a m ()
+insert k v = modify $ HashMap.insert k v
