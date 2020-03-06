@@ -31,6 +31,10 @@ data QN = QN [Name]
 instance Hashable QN
 
 
+data QNamed a = QNamed { qn :: QN , qnamed :: a }
+  deriving (Eq, Show, Generic, Functor)
+
+
 readQN :: T.Text -> QN
 readQN = QN . (map Name) . T.splitOn (T.pack ".")
 
@@ -42,7 +46,6 @@ textsToQN = QN . (map Name)
 
 
 type ModuleMap a = HashMap.HashMap QN a
-
 
 newtype ModuleStateT a m b = ModuleStateT (StateT (ModuleMap a) m b)
   deriving (Functor,Applicative,Monad,MonadTrans)

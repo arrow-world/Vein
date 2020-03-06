@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-{-# LANGUAGE EmptyCase #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Vein.Syntax.PrettyPrinter where
@@ -9,6 +8,7 @@ module Vein.Syntax.PrettyPrinter where
 import Vein.Syntax.Lexer as L
 import Vein.Syntax.Parser as P
 import Vein.Syntax.AST as AST
+import Vein.Core.Module as Module
 
 import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Render.Text (putDoc)
@@ -19,9 +19,19 @@ instance Pretty e => Pretty (AST.Top e) where
   pretty = stmts . AST.definitions
 
 
+instance Pretty e => Pretty (AST.Statement e) where
+  pretty = \case
+    AST.Def d -> "<Def>" <+> align (pretty d)
+    AST.Ann a -> "<Ann>" <+> align (pretty a)
+
+instance Pretty e => Pretty (AST.Annotation e) where
+  pretty = \case
+    AST.TypeAnnotation l r -> pretty l <+> ":" <+> pretty r
+
+
 instance Pretty r => Pretty (AST.ExprF r) where
   pretty = \case
-    AST.EApp f xs -> pretty f <+> (align $ vsep $ map pretty xs)
+    AST.EApp f xs -> pretty f <+> (align $ vsep $ map pretty $ unLocated xs)
     AST.EUnaryOpF op e -> pretty op <+> pretty e
     AST.ELiteralF l -> pretty l
     AST.ELetInF ps e -> "let" <+> pretty ps <+> softnest ("in" <+> pretty e)
@@ -75,7 +85,7 @@ instance {-# OVERLAPPING #-} Pretty e => Pretty [Located (Prop e)] where
 
 instance Pretty e => Pretty (AST.Prop e) where
   pretty = \case
-    AST.PropEq l r -> pretty l <+> "=" <+> pretty r
+    AST.PropEq name params r -> prettyNameParams (unLocated name) params <+> "=" <+> pretty r
     AST.PropTypeAnnotation l r -> pretty l <+> ":" <+> pretty r
 --  AST.PropEqWithTypeAnnotation tl tr el er -> pretty tl <+> ":" <+> pretty tr <> ";" <+> pretty el <+> "=" <+> pretty er
 
@@ -93,12 +103,6 @@ instance Pretty L.Base where
     L.Binary  -> "0b"
 
 instance Pretty L.FloatingPoint where
-  pretty = \case
-
-instance Pretty L.QN where
-  pretty = \case
-    L.QN s -> pretty s
-    L.QNCons s r -> pretty s <> "." <> pretty r
 
 instance Pretty AST.UnaryOp where
   pretty = \case
@@ -113,34 +117,39 @@ instance Pretty e => Pretty (AST.Stmt e) where
     AST.StmtAssign l r -> pretty l <+> "<-" <+> pretty r
 
 
-instance Pretty e => Pretty (AST.Definition e) where
-  pretty = \case
-    AST.DefData d -> pretty d
-    AST.DefTypeclass d -> pretty d
-    AST.DefInstance d -> pretty d
-    AST.DefConst p -> pretty p
+instance Pretty e => Pretty (Module.QNamed (AST.Definition e)) where
+  pretty def = case Module.qnamed def of
+      AST.DefData d -> ("data" <+>) $ case d of
+        AST.GADT params props -> prettyExprParamsProps name params props
+        AST.ADT params cs -> prettyNameParams name params <+> "="
+          <+> group ( flatAlt (line <> "  ") "" <> align (encloseSep (flatAlt "  " "") "" (flatAlt "| " " | ") $ map pretty cs) )
 
-instance Pretty e => Pretty (AST.Datatype e) where
-  pretty = ("data" <+>) . \case
-    AST.GADT e params props -> prettyExprParamsProps e params props
-    AST.ADT e cs -> pretty e <+> "="
-      <+> group ( flatAlt (line <> "  ") "" <> align (encloseSep (flatAlt "  " "") "" (flatAlt "| " " | ") $ map pretty cs) )
+      AST.DefTypeclass (AST.Typeclass params props) -> "typeclass" <+> prettyExprParamsProps name params props
+
+      AST.DefInstance (AST.Instance params props) -> "instance" <+> prettyExprParamsProps name params props
+
+      AST.DefConst params p -> prettyNameParams name params <+> "=" <+> pretty p
+    where
+      name = Module.qn def
 
 instance Pretty e => Pretty (AST.Constructor e) where
-  pretty (AST.Constructor e) = pretty e
+  pretty (AST.Constructor name params) = prettyNameParams (unLocated name) params
 
-instance Pretty e => Pretty (AST.Typeclass e) where
-  pretty (AST.Typeclass e params props) = "typeclass" <+> prettyExprParamsProps e params props
+instance Pretty Module.Name where
+  pretty (Module.Name t) = pretty t
 
-instance Pretty e => Pretty (AST.Instance e) where
-  pretty (AST.Instance e params props) = "instance" <+> prettyExprParamsProps e params props
-
+instance Pretty Module.QN where
+  pretty (Module.QN t) = encloseSep mempty mempty "." $ map pretty t
 
 softnest = (softline <>) . nest 2
 
 stmts :: Pretty a => [a] -> Doc ann
 stmts = vsep . map ( (<> ";") . pretty )
 
-prettyExprParamsProps :: Pretty e => e -> AST.Located [AST.Located (AST.Param e)] -> AST.Located [AST.Located (AST.Prop e)] -> Doc ann
+prettyNameParams :: Pretty e => Module.QN -> AST.Located [AST.Located (AST.Param e)] -> Doc ann
+prettyNameParams name params =
+  pretty name <+> (align $ hsep $ map (parens . pretty) $ unLocated params)
+
+prettyExprParamsProps :: Pretty e => Module.QN -> AST.Located [AST.Located (AST.Param e)] -> AST.Located [AST.Located (AST.Prop e)] -> Doc ann
 prettyExprParamsProps e params props =
-  pretty e <+> (align $ vsep $ map pretty $ unLocated params) <+> "{" <> line <> indent 2 (stmts $ unLocated props) <> line <> "}"
+  prettyNameParams e params <+> "{" <> line <> indent 2 (stmts $ unLocated props) <> line <> "}"

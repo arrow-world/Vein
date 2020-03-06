@@ -2,17 +2,22 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE EmptyCase #-}
 
 module Vein.Syntax.Parser where
 
 import qualified Vein.Syntax.Lexer as L
 import Vein.Syntax.Lexer (Span(..))
 import Vein.Syntax.AST
+import Vein.Core.Module as Module
 
 import Control.Monad.Error
 import Numeric.Natural (Natural)
 import Data.Fix (Fix(..))
 import Data.Tuple (swap)
+import Data.Functor.Identity (Identity(..))
+import qualified Data.Text as T
 }
 
 %name parse
@@ -88,8 +93,8 @@ do        { (L.TKeyword L.Do , $$) }
 %%
 
 top:
-                                        { Top [] }
-  | prop_stmts                          { Top $1 }
+                                        { [] }
+  | prop_stmts                          { $1 }
 
 prop_stmts:
     ';'                                 { [] }
@@ -101,30 +106,52 @@ prop_stmts:
   | prop_needs_separator ';' prop_stmts { $1 : $3 }
   
 prop_unneeds_separator:
-    defTypeclass                        { DefTypeclass $1 }
-  | defInstance                         { DefInstance $1 }
-  | data expr1 params_props             { DefData $ uncurry (GADT $2) $3 }
+    typeclass name params_props         { Def $ Module.QNamed (unLocated $2) $ DefTypeclass $ uncurry Typeclass $3 }
+  | instance name params_props          { Def $ Module.QNamed (unLocated $2) $ DefInstance $ uncurry Instance $3 }
+  | data name params_props              { Def $ Module.QNamed (unLocated $2) $ DefData $ uncurry GADT $3 }
 
 prop_needs_separator:
-    data expr '=' constructors          { DefData $ ADT $2 $4 }
-  | prop                                { DefConst $1 }
+    data name '=' constructors          { Def $ Module.QNamed (unLocated $2) $ DefData $ ADT (Located Nothing []) $4 }
+  | data name params '=' constructors   { Def $ Module.QNamed (unLocated $2) $ DefData $ ADT $3 $5 }
+  | prop                                { case unLocated $1 of
+                                            PropEq name params e -> Def $ Module.QNamed (unLocated name) $ DefConst params e
+                                            PropTypeAnnotation l r -> Ann $ TypeAnnotation l r
+                                        }
 
 constructor:
-    expr                          { Constructor $1 }
+    name                          { Constructor $1 $ Located Nothing [] }
+  | name params                   { Constructor $1 $2 }
 
 constructors:
     constructor                   { [$1] }
   | constructor '|' constructors  { $1 : $3 }
 
-defTypeclass:
-    typeclass expr1 params_props  { uncurry (Typeclass $2) $3 }
-
-defInstance:
-    instance expr1 params_props   { uncurry (Instance $2) $3 }
 
 params_props :: {(Located [Located (Param LocatedExpr)] , Located [Located (Prop LocatedExpr)])} :
     '{' props '}'                 { ( Located (composeSpan $1 $3) [] , $2 ) }
   | param params_props            { swap $ fmap (\params -> Located (composeSpan $1 params) $ $1 : unLocated params) $ swap $2 }
+
+
+prop :: {Located (Prop LocatedExpr)} :
+    pat '=' expr_with_where                 { Located (composeSpan $1 $3) $ case leExprF $ unFix $1 of
+                                                EVar name -> PropEq (Located (toSpan $1) name) (Located Nothing []) $3
+
+                                                EApp var params ->
+                                                  PropEq (unwrapQN var) params $3
+                                                
+                                                EUnaryOpF op e ->
+                                                  PropEq (Located undefined $ uopToName op) (Located (toSpan e) [Located Nothing (Param e)]) $3
+
+                                                EBinaryOpF op l r -> 
+                                                  PropEq (Located undefined $ bopToName op)
+                                                    (Located (composeSpan l r) $ map (Located Nothing . Param) [l,r]) $3
+                                            }
+  | expr ':' expr_with_where                { Located (composeSpan $1 $3) $ PropTypeAnnotation $1 $3 }
+
+props :: {Located [Located (Prop LocatedExpr)]} :
+    prop                    { Located (composeSpan $1 $1) [$1] }
+  | prop ';'                { Located (composeSpan $1 $2) [$1] }
+  | prop ';' props          { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 expr_with_typing:
     expr                          { $1 }
@@ -187,7 +214,7 @@ expr21:
 
 expr2:
     expr1                           { $1 }
-  | expr1 params                    { mkExpr $1 $2 $ EApp $1 $ unLocated $2 }
+  | expr1 params                    { mkExpr $1 $2 $ EApp $1 $2 }
 
 param:
     expr1                           { Located (toSpan $1) $ Param $1 }
@@ -216,17 +243,6 @@ literal:
 
 name:
     qn                      { let (L.TQN qn , l) = $1 in Located l qn }
-
-
-prop :: {Located (Prop LocatedExpr)} :
-    expr '=' expr_with_where                { Located (composeSpan $1 $3) $ PropEq $1 $3 }
-  | expr ':' expr_with_where                { Located (composeSpan $1 $3) $ PropTypeAnnotation $1 $3 }
---  | expr ':' expr ';' expr '=' expr       { Located (composeSpan $1 $7) $ PropEqWithTypeAnnotation $1 $3 $5 $7 }
-
-props :: {Located [Located (Prop LocatedExpr)]} :
-    prop                    { Located (composeSpan $1 $1) [$1] }
-  | prop ';'                { Located (composeSpan $1 $2) [$1] }
-  | prop ';' props          { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
 
 
 list:
@@ -287,6 +303,21 @@ mkExpr first last e = Fix $ LocatedExprF e $ composeSpan (toSpan first) (toSpan 
 mkArrow :: Located (Param LocatedExpr) -> LocatedExpr -> ExprF LocatedExpr
 mkArrow a (Fix (LocatedExprF (EArrowF as b) _)) = EArrowF (a:as) b
 mkArrow a b = EArrowF [a] b
+
+uopToName :: UnaryOp -> Module.QN
+uopToName = \case
+
+bopToName :: BinaryOp LocatedExpr -> Module.QN
+bopToName = \case
+    Plus -> toQN [modop,"plus"]
+    Minus -> toQN [modop,"minus"]
+    Infixated e -> unLocated $ unwrapQN e
+  where
+    modop = "operator"
+    toQN = Module.QN . map Module.Name
+
+unwrapQN :: LocatedExpr -> Located Module.QN
+unwrapQN (Fix (LocatedExprF (EVar name) loc)) = Located loc name
 
 parseError :: L.LocatedToken -> L.Alex a
 parseError t = L.alexError $ "parseError: " ++ show t

@@ -8,6 +8,9 @@ import qualified Numeric as Numeric
 import Data.List (head,drop,splitAt)
 import Data.Char (digitToInt)
 import Data.List.Split (splitOn)
+import qualified Data.Text as T
+
+import Vein.Core.Module as Module
 }
 
 %wrapper "monad"
@@ -44,7 +47,7 @@ tokens :-
   typeclass             { hook $ const $ TKeyword Typeclass }
   instance              { hook $ const $ TKeyword Instance }
   do                    { hook $ const $ TKeyword Do }
-  @fqn                  { hook $ TQN . readQN }
+  @fqn                  { hook $ TQN . Module.readQN . T.pack }
   "="                   { hook $ const $ TSymbol Def }
   "=="                  { hook $ const $ TSymbol Eq }
   "/="                  { hook $ const $ TSymbol Neq }
@@ -90,7 +93,7 @@ data Token =
   | TParen ParenSort ParenLR
   | TKeyword Keyword
   | TSymbol Symbol
-  | TQN QN
+  | TQN Module.QN
   | TSeparator Separator
   | TEof
   deriving (Eq,Show)
@@ -113,18 +116,6 @@ hook f (pos,_,_,input) len =
     return ( f s , Just $ Span pos $ Just $ absAlexPosn pos + fromIntegral len )
   where
     s = take len input
-
-data QN =
-    QN String
-  | QNCons String QN
-  deriving (Eq,Show)
-
-readQN :: String -> QN
-readQN = toQN . splitOn "."
-  where
-    toQN [s] = QN s
-    toQN (s:ss) = QNCons s (toQN ss)
-
 
 data FloatingPoint =
     FPPoint Natural Natural
