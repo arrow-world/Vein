@@ -3,7 +3,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE DatatypeContexts #-}
 
 module Vein.Core.Monoidal.CompactClosed where
 
@@ -27,7 +26,7 @@ instance DualityObject (D a) where
   dual = Dual
 
 
-data DualityObject o => DualityM o m =
+data DualityM o m =
     DualityM m
   | Ev (Monoidal.Object o)
   | Cv (Monoidal.Object o)

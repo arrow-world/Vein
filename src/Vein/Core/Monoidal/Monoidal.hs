@@ -8,7 +8,6 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DatatypeContexts #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Vein.Core.Monoidal.Monoidal where
@@ -122,7 +121,7 @@ docoCartesian docoM f =
     Aug x       -> pure (x, Unit)
 
 
-data WithInternalHom o => CartesianClosed m o =
+data CartesianClosed m o =
     CartesianClosed m
   | Eval (Object o) (Object o)
     deriving (Eq, Show)
