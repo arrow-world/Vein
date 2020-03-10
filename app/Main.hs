@@ -10,6 +10,7 @@ import qualified Option as Option
 
 import Data.Text.Prettyprint.Doc (pretty)
 import Data.Text.Prettyprint.Doc.Util (putDocW)
+import           Data.Foldable                  ( for_ )
 import System.Console.Terminal.Size as TerminalSize
 
 {-
@@ -18,7 +19,7 @@ sinT f = (pureB (\t -> sin (2*pi*f*t))) >>>
   (Primitive (ToDTCV_FromBehaviorFloat :: ToDTCV_FromBehaviorFloat 44100))
 -}
 
-parse :: String -> Either String [AST.Statement AST.LocatedExpr]
+parse :: String -> Either String (AST.ParsedEnv AST.LocatedExpr)
 parse s = Lexer.runAlex s Parser.parse
 
 main :: IO ()
@@ -35,11 +36,11 @@ main = do
 
   width <- TerminalSize.size >>= return . maybe 80 TerminalSize.width
 
-  flip traverse (zip inputFiles srcs) $ \(file,src) -> either print id $ do
+  for_ (zip inputFiles srcs) $ \(file,src) -> either print id $ do
     src' <- parse src
     return $ do
       putStr $ "File: " ++ file ++ "\n\n"
-      putDocW width $ pretty src'
+      putDocW width $ PrettyPrinter.prettyParsedEnv src'
       putStr "\n\n\n"
 
   return ()

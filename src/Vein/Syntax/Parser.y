@@ -93,8 +93,8 @@ do        { (L.TKeyword L.Do , $$) }
 %%
 
 top:
-                                        { [] }
-  | prop_stmts                          { $1 }
+                                        { ParsedEnv $ Right emptyEnv }
+  | prop_stmts                          { parsedStatementsToEnv $1 }
 
 prop_stmts:
     ';'                                 { [] }
@@ -106,15 +106,15 @@ prop_stmts:
   | prop_needs_separator ';' prop_stmts { $1 : $3 }
   
 prop_unneeds_separator:
-    typeclass name params_props         { Def $ Module.QNamed (unLocated $2) $ DefTypeclass $ uncurry Typeclass $3 }
-  | instance name params_props          { Def $ Module.QNamed (unLocated $2) $ DefInstance $ uncurry Instance $3 }
-  | data name params_props              { Def $ Module.QNamed (unLocated $2) $ DefData $ uncurry GADT $3 }
+    typeclass name params_props         { Right $ Def $ Module.QNamed (unLocated $2) $ DefTypeclass $ uncurry Typeclass $3 }
+  | instance name params_props          { Right $ Ann $ DeclInstance $ uncurry (Instance $ unLocated $2) $3 }
+  | data name params_props              { Right $ Def $ Module.QNamed (unLocated $2) $ DefData $ uncurry GADT $3 }
 
 prop_needs_separator:
-    data name '=' constructors          { Def $ Module.QNamed (unLocated $2) $ DefData $ ADT (Located Nothing []) $4 }
-  | data name params '=' constructors   { Def $ Module.QNamed (unLocated $2) $ DefData $ ADT $3 $5 }
-  | prop                                { case unLocated $1 of
-                                            PropEq name params e -> Def $ Module.QNamed (unLocated name) $ DefConst params e
+    data name '=' constructors          { Right $ Def $ Module.QNamed (unLocated $2) $ DefData $ ADT (Located Nothing []) $4 }
+  | data name params '=' constructors   { Right $ Def $ Module.QNamed (unLocated $2) $ DefData $ ADT $3 $5 }
+  | prop                                { unLocated $1 >>= return . \case
+                                            PropEq name params e -> Def $ Module.QNamed (unLocated name) $ DefConst [(params,e)]
                                             PropTypeAnnotation l r -> Ann $ TypeAnnotation l r
                                         }
 
@@ -127,28 +127,33 @@ constructors:
   | constructor '|' constructors  { $1 : $3 }
 
 
-params_props :: {(Located [Located (Param LocatedExpr)] , Located [Located (Prop LocatedExpr)])} :
-    '{' props '}'                 { ( Located (composeSpan $1 $3) [] , $2 ) }
+params_props :: {(Located [Located (Param LocatedExpr)] , Located (ParsedEnv LocatedExpr))} :
+    '{' props '}'                 { ( Located (composeSpan $1 $3) [] , fmap parsedPropsToEnv $2 ) }
   | param params_props            { swap $ fmap (\params -> Located (composeSpan $1 params) $ $1 : unLocated params) $ swap $2 }
 
 
-prop :: {Located (Prop LocatedExpr)} :
+prop :: {Located (Either (ParseError LocatedExpr) (Prop LocatedExpr))} :
     pat '=' expr_with_where                 { Located (composeSpan $1 $3) $ case leExprF $ unFix $1 of
-                                                EVar name -> PropEq (Located (toSpan $1) name) (Located Nothing []) $3
+                                                EVar name -> Right $ PropEq (Located (toSpan $1) name) (Located Nothing []) $3
 
-                                                EApp var params ->
-                                                  PropEq (unwrapQN var) params $3
+                                                EApp var params -> do
+                                                  var' <- maybe (Left $ NotAllowedExpr $1) Right $ unwrapQN var
+                                                  return $ PropEq var' params $3
                                                 
-                                                EUnaryOpF op e ->
-                                                  PropEq (Located undefined $ uopToName op) (Located (toSpan e) [Located Nothing (Param e)]) $3
+                                                EUnaryOpF op e -> do
+                                                  op' <- maybe (Left $ NotAllowedExpr $1) Right $ uopToName op
+                                                  return $ PropEq (Located undefined op') (Located (toSpan e) [Located Nothing (Param e)]) $3
 
-                                                EBinaryOpF op l r -> 
-                                                  PropEq (Located undefined $ bopToName op)
-                                                    (Located (composeSpan l r) $ map (Located Nothing . Param) [l,r]) $3
+                                                EBinaryOpF op l r -> do
+                                                  op' <- maybe (Left $ NotAllowedExpr $1) Right $ bopToName op
+                                                  return $  PropEq (Located undefined op')
+                                                              (Located (composeSpan l r) $ map (Located Nothing . Param) [l,r]) $3
+                                                
+                                                _ -> Left $ NotAllowedExpr $1
                                             }
-  | expr ':' expr_with_where                { Located (composeSpan $1 $3) $ PropTypeAnnotation $1 $3 }
+  | expr ':' expr_with_where                { Located (composeSpan $1 $3) $ Right $ PropTypeAnnotation $1 $3 }
 
-props :: {Located [Located (Prop LocatedExpr)]} :
+props :: {Located [Located (Either (ParseError LocatedExpr) (Prop LocatedExpr))]} :
     prop                    { Located (composeSpan $1 $1) [$1] }
   | prop ';'                { Located (composeSpan $1 $2) [$1] }
   | prop ';' props          { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
@@ -159,7 +164,7 @@ expr_with_typing:
 
 expr_with_where:
     expr                          { $1 }
-  | expr where '{' props '}'      { mkExpr $1 $5 $ EWhereF $1 $4 }
+  | expr where '{' props '}'      { mkExpr $1 $5 $ EWhereF $1 (fmap parsedPropsToEnv $4) }
 
 expr:
     expr4                         { $1 }
@@ -168,7 +173,7 @@ expr:
 expr4:
     expr3                         { $1 }
   | '\\' pat '->' expr            { mkExpr $1 $4 $ ELamF $2 $4 }
-  | let props in expr             { mkExpr $1 $4 $ ELetInF $2 $4 }
+  | let props in expr             { mkExpr $1 $4 $ ELetInF (fmap parsedPropsToEnv $2) $4 }
   | case expr of clauses          { mkExpr $1 $4 $ ECaseOfF $2 $4 }
   | match clauses                 { mkExpr $1 $2 $ EMatchF $2 }
   | do '{' stmts '}'              { mkExpr $1 $4 $ EDo $3 }
@@ -304,20 +309,24 @@ mkArrow :: Located (Param LocatedExpr) -> LocatedExpr -> ExprF LocatedExpr
 mkArrow a (Fix (LocatedExprF (EArrowF as b) _)) = EArrowF (a:as) b
 mkArrow a b = EArrowF [a] b
 
-uopToName :: UnaryOp -> Module.QN
+uopToName :: UnaryOp -> Maybe Module.QN
 uopToName = \case
+  _ -> Nothing
 
-bopToName :: BinaryOp LocatedExpr -> Module.QN
+bopToName :: BinaryOp LocatedExpr -> Maybe Module.QN
 bopToName = \case
-    Plus -> toQN [modop,"plus"]
-    Minus -> toQN [modop,"minus"]
-    Infixated e -> unLocated $ unwrapQN e
+    Plus -> Just $ toQN [modop,"plus"]
+    Minus -> Just $ toQN [modop,"minus"]
+    Infixated e -> unLocated <$> unwrapQN e
+    _ -> Nothing
   where
     modop = "operator"
     toQN = Module.QN . map Module.Name
 
-unwrapQN :: LocatedExpr -> Located Module.QN
-unwrapQN (Fix (LocatedExprF (EVar name) loc)) = Located loc name
+unwrapQN :: LocatedExpr -> Maybe (Located Module.QN)
+unwrapQN = \case
+  Fix (LocatedExprF (EVar name) loc) -> Just $ Located loc name
+  _ -> Nothing
 
 parseError :: L.LocatedToken -> L.Alex a
 parseError t = L.alexError $ "parseError: " ++ show t

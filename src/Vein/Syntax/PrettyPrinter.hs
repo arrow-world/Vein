@@ -14,6 +14,7 @@ import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Render.Text (putDoc)
 import Data.Text (Text)
 import Data.Fix (Fix(..))
+import qualified Data.HashMap.Lazy as HashMap
 
 instance Pretty e => Pretty (AST.Top e) where
   pretty = stmts . AST.definitions
@@ -27,6 +28,24 @@ instance Pretty e => Pretty (AST.Statement e) where
 instance Pretty e => Pretty (AST.Annotation e) where
   pretty = \case
     AST.TypeAnnotation l r -> pretty l <+> ":" <+> pretty r
+    AST.DeclInstance (AST.Instance name params props) -> "instance" <+> prettyExprParamsProps name params props
+
+
+instance Pretty e => Pretty (AST.Env e) where
+  pretty (Env mod anns) =
+    "module:" <> line <> indent 2 (align $ stmts $ map (uncurry Module.QNamed) $ HashMap.toList mod) <> line <>
+    "annotations:" <> line <> indent 2 (align $ stmts anns)
+
+instance Pretty e => Pretty (AST.ParseError e) where
+  pretty = \case
+    AST.MultipleDecl name p i -> "MultipleDecl" <+> pretty p <+> pretty (Module.QNamed name i)
+    AST.MultipleDeclS name d i -> "MultipleDecl" <+> pretty (Module.QNamed name d) <+> pretty (Module.QNamed name i)
+    AST.NotAllowedExpr e -> "NotAllowedExpr" <+> pretty e
+
+instance Pretty e => Pretty (Module.QNamed (AST.Item e)) where
+  pretty (Module.QNamed name i) = case i of
+    AST.ItemDef d -> "<ItemDef>" <+> align (pretty $ Module.QNamed name d)
+    AST.ItemEnv e -> "<ItemEnv>" <+> align (pretty e)
 
 
 instance Pretty r => Pretty (AST.ExprF r) where
@@ -34,8 +53,8 @@ instance Pretty r => Pretty (AST.ExprF r) where
     AST.EApp f xs -> pretty f <+> (align $ vsep $ map pretty $ unLocated xs)
     AST.EUnaryOpF op e -> pretty op <+> pretty e
     AST.ELiteralF l -> pretty l
-    AST.ELetInF ps e -> "let" <+> pretty ps <+> softnest ("in" <+> pretty e)
-    AST.EWhereF e ps -> pretty e <+> softnest ("where" <+> pretty ps)
+    AST.ELetInF ps e -> "let" <+> prettyParsedEnv (unLocated ps) <+> softnest ("in" <+> pretty e)
+    AST.EWhereF e ps -> pretty e <+> softnest ("where" <+> prettyParsedEnv (unLocated ps))
     AST.ECaseOfF e cs -> "case" <+> pretty e <+> softnest ("of" <+> pretty cs)
     AST.EMatchF cs -> "match" <+> softnest (pretty cs)
     AST.EListF es -> list $ map pretty $ AST.unLocated es
@@ -126,9 +145,7 @@ instance Pretty e => Pretty (Module.QNamed (AST.Definition e)) where
 
       AST.DefTypeclass (AST.Typeclass params props) -> "typeclass" <+> prettyExprParamsProps name params props
 
-      AST.DefInstance (AST.Instance params props) -> "instance" <+> prettyExprParamsProps name params props
-
-      AST.DefConst params p -> prettyNameParams name params <+> "=" <+> pretty p
+      AST.DefConst cs -> vsep $ map (\(params,p) -> prettyNameParams name params <+> "=" <+> pretty p) cs
     where
       name = Module.qn def
 
@@ -150,6 +167,9 @@ prettyNameParams :: Pretty e => Module.QN -> AST.Located [AST.Located (AST.Param
 prettyNameParams name params =
   pretty name <+> (align $ hsep $ map (parens . pretty) $ unLocated params)
 
-prettyExprParamsProps :: Pretty e => Module.QN -> AST.Located [AST.Located (AST.Param e)] -> AST.Located [AST.Located (AST.Prop e)] -> Doc ann
+prettyExprParamsProps :: Pretty e => Module.QN -> AST.Located [AST.Located (AST.Param e)] -> AST.Located (ParsedEnv e) -> Doc ann
 prettyExprParamsProps e params props =
-  prettyNameParams e params <+> "{" <> line <> indent 2 (stmts $ unLocated props) <> line <> "}"
+  prettyNameParams e params <+> "{" <> line <> indent 2 (prettyParsedEnv $ unLocated props) <> line <> "}"
+
+prettyParsedEnv :: Pretty e => AST.ParsedEnv e -> Doc ann
+prettyParsedEnv (AST.ParsedEnv env) = either (("<parse error>" <+>) . pretty) pretty env
