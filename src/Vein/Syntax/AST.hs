@@ -95,7 +95,7 @@ data Param e =
   | ParamImplicit e
   deriving (Eq,Show,Functor)
 
-data ExprF r =
+data ExprF' r v =
     EApp r (Located [Located (Param r)])
   | EUnaryOpF UnaryOp r
   | EBinaryOpF (BinaryOp r) r r
@@ -111,11 +111,13 @@ data ExprF r =
   | EDo (Located [Located (Stmt r)])
   | EHole
   | EPlaceholder
-  | EVar Module.QN
+  | EVar v
   deriving (Eq,Show,Functor)
 
+type ExprF r = ExprF' r Module.QN
+
 data LocatedExprF r = LocatedExprF { leExprF :: ExprF r , leSpan :: Maybe Span }
-  deriving (Eq,Show,Functor)
+  deriving (Eq,Show)
 
 type LocatedExpr = Fix LocatedExprF
 

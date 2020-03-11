@@ -6,7 +6,6 @@ module Vein.Core.Module where
 
 import qualified Data.Text as T
 import qualified Data.HashMap.Lazy as HashMap
-
 import GHC.Generics (Generic)
 import Data.Hashable (Hashable)
 import Control.Monad.Trans (MonadTrans)
