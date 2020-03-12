@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -31,7 +33,7 @@ instance Hashable QN
 
 
 data QNamed a = QNamed { qn :: QN , qnamed :: a }
-  deriving (Eq, Show, Generic, Functor)
+  deriving (Eq, Show, Generic, Functor,Foldable,Traversable)
 
 
 readQN :: T.Text -> QN

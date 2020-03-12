@@ -24,6 +24,7 @@ import qualified Vein.Core.Const as C
 import qualified Vein.Core.Monoidal.Monoidal as Mo
 import qualified Vein.Core.Monoidal.CompactClosed as CC
 import Vein.Util.Counter (Counter(..), count, runCounter)
+import Vein.Util.Pool (PoolT , pool)
 
 import qualified LLVM.AST as LA
 import qualified Data.HashMap.Lazy as HashMap
@@ -414,28 +415,12 @@ numbering (Fix c) =
         return $ Fix $ ComponentNumberedF c' Nothing
 
 
-newtype PoolT k v m a = PoolT (StateT (Map.Map k v) (ReaderT (k -> m v) m) a)
-  deriving (Functor, Applicative, Monad)
-
-allocate :: (Ord k , Monad m) => k -> PoolT k v m v
-allocate k = PoolT $ do
-  table <- get
-
-  case Map.lookup k table of
-    Just v -> return v
-
-    Nothing -> do
-      f <- lift ask
-      v <- lift $ lift $ f k
-      modify $ Map.insert k v
-      return v
-
 type StartPoint = (JunctionPoint , Maybe ForkDirection)
 type BranchIndex = Natural
 type LabelPool m a = PoolT StartPoint LA.Name m a
 
 allocateLabel :: MonadIRBuilder m => (JunctionPoint , Maybe ForkDirection) -> LabelPool m LA.Name
-allocateLabel = allocate
+allocateLabel = pool
 
 emitMarkOccupied :: MonadIRBuilder m => BranchIndex -> m ()
 emitMarkOccupied i = undefined

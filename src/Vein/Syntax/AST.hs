@@ -1,4 +1,7 @@
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module Vein.Syntax.AST where
 
@@ -10,37 +13,47 @@ import Numeric.Natural (Natural)
 import Data.Fix (Fix(..))
 import qualified Data.HashMap.Lazy as HashMap
 import           Data.Either                    ( partitionEithers )
+import           Control.Monad                  ( (>=>) )
+import Data.Hashable
 
-data Top e = Top
-  { definitions :: [Module.QNamed (Definition e)]
-  , annotations :: [Annotation e]
+data Top e v = Top
+  { definitions :: [(Definition e v , v)]
+  , annotations :: [Annotation e v]
   }
-  deriving (Eq,Show,Functor)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data Env e = Env
-  { envModule :: Module.ModuleMap (Item e)
-  , envAnnotations :: [Annotation e]
+
+newtype ItemMap e v = ItemMap (HashMap.HashMap v (Item e v))
+  deriving (Eq,Show)
+
+instance Functor (ItemMap e) where
+  fmap :: (Eq b , Hashable b) => (a -> b) -> ItemMap e a -> ItemMap e b
+
+
+data Env e v = Env
+  { envModule :: ItemMap e v
+  , envAnnotations :: [Annotation e v]
   }
-  deriving (Eq,Show,Functor)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-emptyEnv = Env HashMap.empty []
+emptyEnv = Env (ItemMap HashMap.empty) []
 
-data Item e =
-    ItemDef (Definition e)
-  | ItemEnv (Env e)
-  deriving (Eq,Show,Functor)
+data Item e v =
+    ItemDef (Definition e v)
+  | ItemEnv (Env e v)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data Statement e =
-    Def (Module.QNamed (Definition e))
-  | Ann (Annotation e)
-  deriving (Eq,Show,Functor)
+data Statement e v =
+    Def v (Definition e v)
+  | Ann (Annotation e v)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-statementsToEnv :: [Statement e] -> Either (ParseError e) (Env e)
+statementsToEnv :: [Statement e Module.QN] -> Either (ParseError e Module.QN) (Env e Module.QN)
 statementsToEnv [] = Right emptyEnv
 statementsToEnv (s:ss) = do
   Env mod anns <- statementsToEnv ss
   case s of
-    Def (Module.QNamed name def) -> Env <$> HashMap.alterF f name mod <*> pure anns
+    Def name def -> Env <$> HashMap.alterF f name mod <*> pure anns
       where
         f v = case (v,def) of
           (Nothing,_) -> Right $ Just $ ItemDef def
@@ -49,7 +62,7 @@ statementsToEnv (s:ss) = do
     
     Ann ann -> return $ Env mod $ ann : anns
 
-parsedStatementsToEnv :: [Either (ParseError e) (Statement e)] -> ParsedEnv e
+parsedStatementsToEnv :: [Either (ParseError e Module.QN) (Statement e Module.QN)] -> ParsedEnv e Module.QN
 parsedStatementsToEnv ss = ParsedEnv $
     if null errs then
       either (Left . pure) Right $ statementsToEnv ss'
@@ -57,51 +70,51 @@ parsedStatementsToEnv ss = ParsedEnv $
       Left errs
   where (errs,ss') = partitionEithers ss
 
-data Definition e =
-    DefData (Datatype e)
-  | DefTypeclass (Typeclass e)
+data Definition e v =
+    DefData (Datatype e v)
+  | DefTypeclass (Typeclass e v)
   | DefConst [(Located [Located (Param e)] , e)]
-  deriving (Eq,Show,Functor)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data Annotation e =
+data Annotation e v =
     TypeAnnotation e e
-  | DeclInstance (Instance e)
-  deriving (Eq,Show,Functor)
+  | DeclInstance (Instance e v)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data Prop e =
-    PropEq (Located Module.QN) (Located [Located (Param e)]) e
+data Prop e v =
+    PropEq (Located v) (Located [Located (Param e)]) e
   | PropTypeAnnotation e e
-  deriving (Eq,Show,Functor)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
 data Clause e = Clause e e
-  deriving (Eq,Show,Functor)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data Datatype e =
-    GADT (Located [Located (Param e)]) (Located (ParsedEnv e))
-  | ADT (Located [Located (Param e)]) [Constructor e]
-  deriving (Eq,Show,Functor)
+data Datatype e v =
+    GADT (Located [Located (Param e)]) (Located (ParsedEnv e v))
+  | ADT (Located [Located (Param e)]) [Constructor e v]
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data Typeclass e = Typeclass (Located [Located (Param e)]) (Located (ParsedEnv e))
-  deriving (Eq,Show,Functor)
+data Typeclass e v = Typeclass (Located [Located (Param e)]) (Located (ParsedEnv e v))
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data Instance e = Instance Module.QN (Located [Located (Param e)]) (Located (ParsedEnv e))
-  deriving (Eq,Show,Functor)
+data Instance e v = Instance v (Located [Located (Param e)]) (Located (ParsedEnv e v))
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data Constructor e = Constructor (Located Module.QN) (Located [Located (Param e)])
-  deriving (Eq,Show,Functor)
+data Constructor e v = Constructor (Located v) (Located [Located (Param e)])
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
 data Param e =
     Param e
   | ParamImplicit e
-  deriving (Eq,Show,Functor)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
 data ExprF' r v =
     EApp r (Located [Located (Param r)])
   | EUnaryOpF UnaryOp r
   | EBinaryOpF (BinaryOp r) r r
   | ELiteralF Literal
-  | ELetInF (Located (ParsedEnv r)) r
-  | EWhereF r (Located (ParsedEnv r))
+  | ELetInF (Located (ParsedEnv r v)) r
+  | EWhereF r (Located (ParsedEnv r v))
   | ECaseOfF r (Located [Located (Clause r)])
   | EMatchF (Located [Located (Clause r)])
   | EListF (Located [r])
@@ -112,7 +125,7 @@ data ExprF' r v =
   | EHole
   | EPlaceholder
   | EVar v
-  deriving (Eq,Show,Functor)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
 type ExprF r = ExprF' r Module.QN
 
@@ -122,7 +135,12 @@ data LocatedExprF r = LocatedExprF { leExprF :: ExprF r , leSpan :: Maybe Span }
 type LocatedExpr = Fix LocatedExprF
 
 data Located a = Located { lSpan :: Maybe Span , unLocated :: a }
-  deriving (Eq,Show,Functor)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
+
+data LocatedExprF' r v = LocatedExprF' { leExprF' :: ExprF' r v , leSpan' :: Maybe Span }
+  deriving (Eq,Show,Functor,Foldable,Traversable)
+
+type LocatedExpr' v = Fix (LocatedExprF' v)
 
 data UnaryOp =
     Inverse
@@ -156,22 +174,28 @@ data Stmt e =
   deriving (Eq,Show,Functor)
 
 
-data ParseError e =
-    MultipleDecl Module.QN (Prop e) (Item e)
-  | MultipleDeclS Module.QN (Definition e) (Item e)
+data ParseError e v =
+    MultipleDecl v (Prop e v) (Item e v)
+  | MultipleDeclS v (Definition e v) (Item e v)
   | NotAllowedExpr e
-  deriving (Eq,Show,Functor)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
 
-newtype ParsedEnv e = ParsedEnv (Either [ParseError e] (Env e))
+newtype ParsedEnv e v = ParsedEnv (Either [ParseError e v] (Env e v))
   deriving (Eq,Show)
 
-instance Functor ParsedEnv where
+instance Functor (ParsedEnv e) where
   fmap f (ParsedEnv x) = ParsedEnv $ case x of
     Left errs -> Left $ map (fmap f) errs
     Right env -> Right $ fmap f env
 
-propsToEnv :: [Prop e] -> Either (ParseError e) (Env e)
+instance Foldable (ParsedEnv e) where
+  foldMap f (ParsedEnv x) = either (foldMap (foldMap f)) (foldMap f) x
+
+instance Traversable (ParsedEnv e) where
+  traverse f (ParsedEnv x) = ParsedEnv <$> either (fmap Left . traverse (traverse f)) (fmap Right . traverse f) x
+
+propsToEnv :: [Prop e Module.QN] -> Either (ParseError e Module.QN) (Env e Module.QN)
 propsToEnv [] = Right emptyEnv
 propsToEnv (p:ps) = do
   Env mod anns <- propsToEnv ps
@@ -185,7 +209,7 @@ propsToEnv (p:ps) = do
 
     PropTypeAnnotation l r -> return $ Env mod $ TypeAnnotation l r : anns
 
-parsedPropsToEnv :: [Located (Either (ParseError e) (Prop e))] -> ParsedEnv e
+parsedPropsToEnv :: [Located (Either (ParseError e Module.QN) (Prop e Module.QN))] -> ParsedEnv e Module.QN
 parsedPropsToEnv ps = ParsedEnv $
     if null errs then
       either (Left . pure) Right $ propsToEnv ps'

@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Vein.Syntax.Parser where
 
@@ -106,15 +107,15 @@ prop_stmts:
   | prop_needs_separator ';' prop_stmts { $1 : $3 }
   
 prop_unneeds_separator:
-    typeclass name params_props         { Right $ Def $ Module.QNamed (unLocated $2) $ DefTypeclass $ uncurry Typeclass $3 }
+    typeclass name params_props         { Right $ Def (unLocated $2) $ DefTypeclass $ uncurry Typeclass $3 }
   | instance name params_props          { Right $ Ann $ DeclInstance $ uncurry (Instance $ unLocated $2) $3 }
-  | data name params_props              { Right $ Def $ Module.QNamed (unLocated $2) $ DefData $ uncurry GADT $3 }
+  | data name params_props              { Right $ Def (unLocated $2) $ DefData $ uncurry GADT $3 }
 
 prop_needs_separator:
-    data name '=' constructors          { Right $ Def $ Module.QNamed (unLocated $2) $ DefData $ ADT (Located Nothing []) $4 }
-  | data name params '=' constructors   { Right $ Def $ Module.QNamed (unLocated $2) $ DefData $ ADT $3 $5 }
+    data name '=' constructors          { Right $ Def (unLocated $2) $ DefData $ ADT (Located Nothing []) $4 }
+  | data name params '=' constructors   { Right $ Def (unLocated $2) $ DefData $ ADT $3 $5 }
   | prop                                { unLocated $1 >>= return . \case
-                                            PropEq name params e -> Def $ Module.QNamed (unLocated name) $ DefConst [(params,e)]
+                                            PropEq name params e -> Def (unLocated name) $ DefConst [(params,e)]
                                             PropTypeAnnotation l r -> Ann $ TypeAnnotation l r
                                         }
 
@@ -127,12 +128,12 @@ constructors:
   | constructor '|' constructors  { $1 : $3 }
 
 
-params_props :: {(Located [Located (Param LocatedExpr)] , Located (ParsedEnv LocatedExpr))} :
+params_props :: {(Located [Located (Param LocatedExpr)] , Located (ParsedEnv LocatedExpr Module.QN))} :
     '{' props '}'                 { ( Located (composeSpan $1 $3) [] , fmap parsedPropsToEnv $2 ) }
   | param params_props            { swap $ fmap (\params -> Located (composeSpan $1 params) $ $1 : unLocated params) $ swap $2 }
 
 
-prop :: {Located (Either (ParseError LocatedExpr) (Prop LocatedExpr))} :
+prop :: {Located (Either (ParseError LocatedExpr Module.QN) (Prop LocatedExpr Module.QN))} :
     pat '=' expr_with_where                 { Located (composeSpan $1 $3) $ case leExprF $ unFix $1 of
                                                 EVar name -> Right $ PropEq (Located (toSpan $1) name) (Located Nothing []) $3
 
@@ -153,7 +154,7 @@ prop :: {Located (Either (ParseError LocatedExpr) (Prop LocatedExpr))} :
                                             }
   | expr ':' expr_with_where                { Located (composeSpan $1 $3) $ Right $ PropTypeAnnotation $1 $3 }
 
-props :: {Located [Located (Either (ParseError LocatedExpr) (Prop LocatedExpr))]} :
+props :: {Located [Located (Either (ParseError LocatedExpr Module.QN) (Prop LocatedExpr Module.QN))]} :
     prop                    { Located (composeSpan $1 $1) [$1] }
   | prop ';'                { Located (composeSpan $1 $2) [$1] }
   | prop ';' props          { Located (composeSpan $1 $3) $ $1 : unLocated $3 }
