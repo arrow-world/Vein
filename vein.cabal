@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c6d12ffeb815b27fe4d4dfa89a5d9b6bd064e205aeb2dd0c7af4079e131bdc24
+-- hash: 503595484952711af597afb499f8f390bca62697844a13c8d1682cd236423158
 
 name:           vein
 version:        0.1.0.0
@@ -47,7 +47,8 @@ library
       Paths_vein
   hs-source-dirs:
       src
-  default-extensions: LambdaCase
+  default-extensions: LambdaCase EmptyCase
+  ghc-options: -fwarn-incomplete-patterns
   build-tools:
       alex
     , happy
@@ -55,6 +56,7 @@ library
       array
     , base
     , containers
+    , data-default
     , data-fix
     , hashable
     , llvm-hs >=8.0.0
@@ -84,6 +86,7 @@ executable vein-exe
       array
     , base
     , containers
+    , data-default
     , data-fix
     , hashable
     , llvm-hs >=8.0.0
@@ -114,6 +117,7 @@ test-suite vein-test
       array
     , base
     , containers
+    , data-default
     , data-fix
     , hashable
     , llvm-hs >=8.0.0

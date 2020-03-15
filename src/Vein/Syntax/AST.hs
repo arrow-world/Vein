@@ -130,8 +130,6 @@ data UnaryOp =
 
 data BinaryOp e =
     Arrow
-  | App
-  | AppImplicit
   | Plus
   | Minus
   | Times

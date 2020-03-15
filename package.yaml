@@ -1,13 +1,16 @@
 library:
   source-dirs: src
+  default-extensions:
+  - LambdaCase
+  - EmptyCase
+  ghc-options:
+  - -fwarn-incomplete-patterns
   exposed-modules:
   - Vein.Syntax.Lexer
   - Vein.Syntax.Parser
   - Vein.Syntax.PrettyPrinter
   - Vein.Syntax.AST
   - Vein.Core.Monoidal.Monoidal
-  default-extensions:
-  - LambdaCase
 tests:
   vein-test:
     source-dirs: test
@@ -36,6 +39,7 @@ dependencies:
 - terminal-size
 - hashable
 - unordered-containers
+- data-default
 name: vein
 version: 0.1.0.0
 extra-source-files:
@@ -43,6 +47,9 @@ extra-source-files:
 - ChangeLog.md
 author: Author name here
 github: arrow-world/vein
+build-tools:
+- alex
+- happy
 license: BSD3
 executables:
   vein-exe:
@@ -55,6 +62,3 @@ executables:
     dependencies:
     - vein
 description: Please see the README on GitHub at <https://github.com/githubuser/vein#readme>
-build-tools:
-- alex
-- happy

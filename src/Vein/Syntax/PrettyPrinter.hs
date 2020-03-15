@@ -77,9 +77,6 @@ instance Pretty r => Pretty (AST.ExprF r) where
         AST.Compose       -> stdLayout "."
         AST.ComposeRight  -> stdLayout ">>"
         AST.Infixated e   -> stdLayout $ "`" <> pretty e <> "`"
-
-        AST.App         -> e1' <+> e2'
-        AST.AppImplicit -> e1' <+> braces e2'
       where
         e1' = pretty e1
         e2' = pretty e2
