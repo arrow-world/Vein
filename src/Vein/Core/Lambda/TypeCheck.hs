@@ -34,49 +34,49 @@ newtype MetaVar = MetaVar Natural
 
 succMetaVar (MetaVar n) = MetaVar $ n + 1
 
-type Env a r = [ExprFWith a (TypedExpr a)]
+type Env a = [ExprFWith a (TypedExpr a)]
 
-data Ctx a r = Ctx
+data Ctx a = Ctx
   { nextMetaVar :: MetaVar
   , assignments :: Map.Map MetaVar (ExprFWith a (TypedExpr a))
   }
   deriving (Eq,Show)
 
-newtype TypeCheckMonad a' r a = TypeCheckMonad (ReaderT (Env a' r) (StateT (Ctx a' r) (Either (Error r))) a)
-  deriving (Functor , Applicative , Monad , MonadError (Error r))
+newtype TypeCheckMonad ann a = TypeCheckMonad (ReaderT (Env ann) (StateT (Ctx ann) (Either (Error (TypedExpr ann)))) a)
+  deriving (Functor , Applicative , Monad , MonadError (Error (TypedExpr ann)))
 
 
-genMetaVar :: TypeCheckMonad a r MetaVar
+genMetaVar :: TypeCheckMonad a MetaVar
 genMetaVar = TypeCheckMonad $ do
   ctx <- lift get
   let metaVar = nextMetaVar ctx
   lift $ put $ ctx { nextMetaVar = succMetaVar metaVar }
   return metaVar
 
-metaVar :: Default a => TypeCheckMonad a r (ExprFWith a r)
+metaVar :: Default a => TypeCheckMonad a (ExprFWith a r)
 metaVar = expr . EMetaVar <$> genMetaVar
 
 
-assign :: MetaVar -> ExprFWith a (TypedExpr a) -> TypeCheckMonad a r (ExprFWith a (TypedExpr a))
+assign :: MetaVar -> ExprFWith a (TypedExpr a) -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
 assign v e = TypeCheckMonad $ do
   ctx <- lift $ get
   lift $ put $ ctx { assignments = Map.insert v e $ assignments ctx }
   return e
 
 
-getEnv :: TypeCheckMonad a r (Env a r)
+getEnv :: TypeCheckMonad a (Env a)
 getEnv = TypeCheckMonad $ ask
 
-lookupEnv :: Natural -> TypeCheckMonad a r (ExprFWith a (TypedExpr a))
+lookupEnv :: Natural -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
 lookupEnv n = TypeCheckMonad $ asks (!! fromIntegral n)
 
-localEnv :: (Env a' r -> Env a' r) -> TypeCheckMonad a' r a -> TypeCheckMonad a' r a
+localEnv :: (Env ann -> Env ann) -> TypeCheckMonad ann a -> TypeCheckMonad ann a
 localEnv f (TypeCheckMonad r) = TypeCheckMonad $ local f r
 
 appendEnv e = localEnv (e:)
 
 
-runTypeCheckMonad :: TypeCheckMonad a' r a -> Ctx a' r -> Either (Error r) (a , Ctx a' r)
+runTypeCheckMonad :: TypeCheckMonad ann a -> Ctx ann -> Either (Error (TypedExpr ann)) (a , Ctx ann)
 runTypeCheckMonad (TypeCheckMonad r) = runStateT (runReaderT r [])
 
 
@@ -115,30 +115,30 @@ eraseType :: TypedExpr a -> Expr a
 eraseType = cata $ Fix . termof
 
 
-check :: Default a => Expr a -> TypeCheckMonad a (TypedExpr a) (E.TypedExpr a)
+check :: Default a => Expr a -> TypeCheckMonad a (E.TypedExpr a)
 check = reconstruct >=> execAssign
 
-execAssign :: Default a => TypedExpr a -> TypeCheckMonad a (TypedExpr a) (E.TypedExpr a)
+execAssign :: Default a => TypedExpr a -> TypeCheckMonad a (E.TypedExpr a)
 execAssign = undefined
 
-checkTyped :: Default a => TypedExpr a -> TypeCheckMonad a (TypedExpr a) ()
+checkTyped :: Default a => TypedExpr a -> TypeCheckMonad a ()
 checkTyped e = do
   ty <- infer (\e -> checkTyped e *> (return . termof . unFix) e) $ unExpr $ termof $ unFix e
   unify ty $ typeof $ unFix e
   return ()
 
 
-reconstruct :: Default a => Expr a -> TypeCheckMonad a (TypedExpr a) (TypedExpr a)
+reconstruct :: Default a => Expr a -> TypeCheckMonad a (TypedExpr a)
 reconstruct e = Fix <$> liftA2 typed e' (infer (return . termof . unFix) =<< unExpr <$> e')
   where
     e' = reconstruct' $ unFix e
 
-    reconstruct' :: Default a => ExprFWith a (Expr a) -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a))
+    reconstruct' :: Default a => ExprFWith a (Expr a) -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
     reconstruct' = traverseExpr' (reconstruct' . unFix) reconstruct
 
 
-infer :: Default a  => (r -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a)))
-                    -> ExprF r -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a))
+infer :: Default a  => (r -> TypeCheckMonad a (ExprFWith a (TypedExpr a)))
+                    -> ExprF r -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
 infer unfix = \case
   EExpr e -> case e of
     E.Var n -> lookupEnv n
@@ -177,7 +177,7 @@ infer unfix = \case
 
 
 unify :: Default a  => ExprFWith a (TypedExpr a) -> ExprFWith a (TypedExpr a)
-                    -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a))
+                    -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
 unify e1 e2 = case (unExpr e1 , unExpr e2) of
   (EMetaVar v1 , EMetaVar v2) -> assign (max v1 v2) $ expr $ EMetaVar (min v1 v2)
   
@@ -188,19 +188,19 @@ unify e1 e2 = case (unExpr e1 , unExpr e2) of
     (E.Univ , E.Univ) -> return univ
     -- _ -> throwError $ UnifyError e1 e2
 
-unifyTyped :: Default a => TypedExpr a -> TypedExpr a -> TypeCheckMonad a (TypedExpr a) (TypedExpr a)
+unifyTyped :: Default a => TypedExpr a -> TypedExpr a -> TypeCheckMonad a (TypedExpr a)
 unifyTyped e1 e2 = do
   e <- unify (termof $ unFix e1) (termof $ unFix e2)
   t <- unify (typeof $ unFix e1) (typeof $ unFix e2)
   return $ Fix $ e `typed` t
 
 
-traverseExpr' ::  (r -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a)))
-                    -> (r -> TypeCheckMonad a (TypedExpr a) b) -> ExprFWith a r -> TypeCheckMonad a (TypedExpr a) (ExprFWith a b)
+traverseExpr' ::  (r -> TypeCheckMonad a (ExprFWith a (TypedExpr a)))
+                    -> (r -> TypeCheckMonad a b) -> ExprFWith a r -> TypeCheckMonad a (ExprFWith a b)
 traverseExpr' unfix f = traverseExprFWith (traverseExpr unfix f)
 
-traverseExpr ::   (r -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a)))
-                    -> (r -> TypeCheckMonad a (TypedExpr a) b) -> ExprF r -> TypeCheckMonad a (TypedExpr a) (ExprF b)
+traverseExpr ::   (r -> TypeCheckMonad a (ExprFWith a (TypedExpr a)))
+                    -> (r -> TypeCheckMonad a b) -> ExprF r -> TypeCheckMonad a (ExprF b)
 traverseExpr unfix f = \case
     EMetaVar v -> return $ EMetaVar v
     EExpr (E.Lam a) -> EExpr . E.Lam <$> traverseAbs a
@@ -235,7 +235,7 @@ pi t e = expr $ EExpr $ E.Pi $ E.Abs t e
 subst :: Default a => E.Subst r -> r -> ExprFWith a r
 subst s e = expr $ EExpr $ E.Subst s e
 
-resolveType :: E.Const -> TypeCheckMonad a r (ExprFWith a r)
+resolveType :: E.Const -> TypeCheckMonad a (ExprFWith a r)
 resolveType c = undefined
 
 {-
