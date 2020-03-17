@@ -20,7 +20,9 @@ import           Control.Monad.Except           ( MonadError , throwError )
 import           Control.Monad                  ( (>=>) )
 import           Control.Applicative            ( liftA2 )
 import Numeric.Natural ( Natural )
-import Data.Fix (Fix(..))
+import           Data.Fix                       ( Fix(..)
+                                                , cata
+                                                )
 import qualified Data.Map.Lazy as Map
 import qualified Data.Default as Default
 import Data.Default (Default)
@@ -32,11 +34,11 @@ newtype MetaVar = MetaVar Natural
 
 succMetaVar (MetaVar n) = MetaVar $ n + 1
 
-type Env a r = [ExprFWith a r]
+type Env a r = [ExprFWith a (TypedExpr a)]
 
 data Ctx a r = Ctx
   { nextMetaVar :: MetaVar
-  , assignments :: Map.Map MetaVar (ExprFWith a r)
+  , assignments :: Map.Map MetaVar (ExprFWith a (TypedExpr a))
   }
   deriving (Eq,Show)
 
@@ -55,7 +57,7 @@ metaVar :: Default a => TypeCheckMonad a r (ExprFWith a r)
 metaVar = expr . EMetaVar <$> genMetaVar
 
 
-assign :: MetaVar -> ExprFWith a r -> TypeCheckMonad a r (ExprFWith a r)
+assign :: MetaVar -> ExprFWith a (TypedExpr a) -> TypeCheckMonad a r (ExprFWith a (TypedExpr a))
 assign v e = TypeCheckMonad $ do
   ctx <- lift $ get
   lift $ put $ ctx { assignments = Map.insert v e $ assignments ctx }
@@ -65,7 +67,7 @@ assign v e = TypeCheckMonad $ do
 getEnv :: TypeCheckMonad a r (Env a r)
 getEnv = TypeCheckMonad $ ask
 
-lookupEnv :: Natural -> TypeCheckMonad a r (ExprFWith a r)
+lookupEnv :: Natural -> TypeCheckMonad a r (ExprFWith a (TypedExpr a))
 lookupEnv n = TypeCheckMonad $ asks (!! fromIntegral n)
 
 localEnv :: (Env a' r -> Env a' r) -> TypeCheckMonad a' r a -> TypeCheckMonad a' r a
@@ -90,13 +92,17 @@ expr :: Default a => ExprF r -> ExprFWith a r
 expr = ExprFWith Default.def
 
 mapExpr f (ExprFWith a e) = ExprFWith a $ f e
+setExpr e' (ExprFWith a e) = ExprFWith a e'
+
+traverseExprFWith :: Functor f => (ExprF r -> f (ExprF b)) -> ExprFWith a r -> f (ExprFWith a b)
+traverseExprFWith f (ExprFWith a e) = ExprFWith a <$> f e
 
 
 type Expr a = Fix (ExprFWith a)
 
 
 data TypedExprF a r = TypedExprF { tefType :: ExprFWith a r , tefTerm :: ExprFWith a r }
-  deriving (Functor,Foldable,Traversable)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
 type TypedExpr a = Fix (TypedExprF a)
 
@@ -105,61 +111,69 @@ typeof = tefType
 termof = tefTerm
 mapTerm f (TypedExprF ty e) = TypedExprF ty $ f e
 
-check :: Default a => TypedExpr a -> TypeCheckMonad a (TypedExpr a) ()
-check e = do
-  ty <- infer $ termof $ unFix e
-  unify ty (typeof $ unFix e)
+eraseType :: TypedExpr a -> Expr a
+eraseType = cata $ Fix . termof
+
+
+check :: Default a => Expr a -> TypeCheckMonad a (TypedExpr a) (E.TypedExpr a)
+check = reconstruct >=> execAssign
+
+execAssign :: Default a => TypedExpr a -> TypeCheckMonad a (TypedExpr a) (E.TypedExpr a)
+execAssign = undefined
+
+checkTyped :: Default a => TypedExpr a -> TypeCheckMonad a (TypedExpr a) ()
+checkTyped e = do
+  ty <- infer (\e -> checkTyped e *> (return . termof . unFix) e) $ unExpr $ termof $ unFix e
+  unify ty $ typeof $ unFix e
   return ()
 
-unifyTyped :: Default a => TypedExpr a -> TypedExpr a -> TypeCheckMonad a (TypedExpr a) (TypedExpr a)
-unifyTyped e1 e2 = do
-  e <- unify (termof $ unFix e1) (termof $ unFix e2)
-  t <- unify (typeof $ unFix e1) (typeof $ unFix e2)
-  return $ Fix $ e `typed` t
+
+reconstruct :: Default a => Expr a -> TypeCheckMonad a (TypedExpr a) (TypedExpr a)
+reconstruct e = Fix <$> liftA2 typed e' (infer (return . termof . unFix) =<< unExpr <$> e')
+  where
+    e' = reconstruct' $ unFix e
+
+    reconstruct' :: Default a => ExprFWith a (Expr a) -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a))
+    reconstruct' = traverseExpr' (reconstruct' . unFix) reconstruct
 
 
-reconstruct :: Default a => ExprFWith a (TypedExpr a) -> TypeCheckMonad a (TypedExpr a) (TypedExpr a)
-reconstruct e = Fix . TypedExprF e <$> infer e
-
-infer :: Default a => ExprFWith a (TypedExpr a) -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a))
-infer (ExprFWith ann e) = case e of
+infer :: Default a  => (r -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a)))
+                    -> ExprF r -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a))
+infer unfix = \case
   EExpr e -> case e of
     E.Var n -> lookupEnv n
 
-    E.Lam a@(E.Abs t'@(Fix t) (Fix e)) -> do
-      let typeofArg = t
-      typeofE <- appendEnv (termof typeofArg) $ infer $ termof e
+    E.Lam a@(E.Abs t e) -> do
+      typeofArg <- unfix t
+      typeofE <- appendEnv typeofArg $ infer' e
 
-      unify (typeof typeofArg) univ
+      return $ pi (Fix $ typeofArg `typed` univ) (Fix $ typeofE `typed` univ)
 
-      return $ pi t' $ Fix $ typeofE `typed` univ
+    E.App e1 e2 -> do
+      typeofArg <- infer' e2
 
-    E.App (Fix e1) e2'@(Fix e2) -> do
-      let typeofArg = typeof $ e2
       typeofVal <- metaVar
       let fnTy = pi (Fix $ typeofArg `typed` univ) (Fix $ (typeofVal `typed` univ))
+      unify fnTy =<< infer' e1
 
-      unify (typeof $ e1) fnTy
-
-      return $ subst (E.dotNil e2') (Fix $ typeofVal `typed` univ)
+      subst <$> (E.dotNil . Fix <$> ((`typed` typeofArg) <$> unfix e2)) <*> pure (Fix $ typeofVal `typed` univ)
     
     E.Const c -> resolveType c
 
     E.Univ -> return univ
 
-    E.Typing (Fix e) (Fix t) -> do
-      unify (typeof t) univ
-      unify (typeof e) $ termof t
+    E.Typing e t -> unfix t
     
-    E.Pi (E.Abs (Fix t) (Fix e)) -> do
-      unify (typeof t) univ
-      unify (typeof e) univ
-
-      return univ
+    E.Pi (E.Abs t e) -> return univ
     
-    E.Subst s e -> typeof . unFix <$> execSubst s e
+    E.Subst s e -> do
+      s' <- traverse (fmap (Fix . fmap eraseType) . unfix) s
+      e' <- Fix . fmap eraseType <$> unfix e
+      infer (return . termof . unFix) =<< ((unExpr . termof . unFix) <$> (reconstruct $ execSubst s' e'))
 
   EMetaVar v -> metaVar
+  where
+    infer' e = infer (return . termof . unFix) =<< unExpr <$> unfix e
 
 
 unify :: Default a  => ExprFWith a (TypedExpr a) -> ExprFWith a (TypedExpr a)
@@ -173,6 +187,27 @@ unify e1 e2 = case (unExpr e1 , unExpr e2) of
   (EExpr e1 , EExpr e2) -> case (e1,e2) of
     (E.Univ , E.Univ) -> return univ
     -- _ -> throwError $ UnifyError e1 e2
+
+unifyTyped :: Default a => TypedExpr a -> TypedExpr a -> TypeCheckMonad a (TypedExpr a) (TypedExpr a)
+unifyTyped e1 e2 = do
+  e <- unify (termof $ unFix e1) (termof $ unFix e2)
+  t <- unify (typeof $ unFix e1) (typeof $ unFix e2)
+  return $ Fix $ e `typed` t
+
+
+traverseExpr' ::  (r -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a)))
+                    -> (r -> TypeCheckMonad a (TypedExpr a) b) -> ExprFWith a r -> TypeCheckMonad a (TypedExpr a) (ExprFWith a b)
+traverseExpr' unfix f = traverseExprFWith (traverseExpr unfix f)
+
+traverseExpr ::   (r -> TypeCheckMonad a (TypedExpr a) (ExprFWith a (TypedExpr a)))
+                    -> (r -> TypeCheckMonad a (TypedExpr a) b) -> ExprF r -> TypeCheckMonad a (TypedExpr a) (ExprF b)
+traverseExpr unfix f = \case
+    EMetaVar v -> return $ EMetaVar v
+    EExpr (E.Lam a) -> EExpr . E.Lam <$> traverseAbs a
+    EExpr (E.Pi a) -> EExpr . E.Lam <$> traverseAbs a
+    EExpr e -> EExpr <$> traverse f e
+  where
+    traverseAbs (E.Abs t e) = E.Abs <$> f t <*> (flip appendEnv (f e) =<< unfix t)
 
 
 {-
@@ -203,25 +238,33 @@ subst s e = expr $ EExpr $ E.Subst s e
 resolveType :: E.Const -> TypeCheckMonad a r (ExprFWith a r)
 resolveType c = undefined
 
-execSubstTyped :: Default a => E.Subst (TypedExpr a) -> TypedExpr a
-                            -> TypeCheckMonad a (TypedExpr a) (TypedExpr a)
+{-
+execSubstTyped :: Default a => E.Subst (Expr a) -> Expr a -> Expr a
 execSubstTyped s (Fix (TypedExprF t e)) = Fix $ TypedExprF (execSubst s t) (execSubst s e)
+-}
 
-execSubst :: Default a  => E.Subst (TypedExpr a) -> ExprFWith a (TypedExpr a)
-                        -> TypeCheckMonad a (TypedExpr a) (TypedExpr a)
-execSubst s e = case (s , unExpr e) of
+execSubst :: Default a  => E.Subst (Expr a) -> Expr a -> Expr a
+execSubst s e = case (s , unExpr $ unFix e) of
     (E.Shift m , EExpr (E.Var k)) -> mapVar $ k + m
-    (E.Dot e' _ , EExpr (E.Var 0)) -> return e'
+    (E.Dot e' _ , EExpr (E.Var 0)) -> e'
     (E.Dot e' s' , EExpr (E.Var k)) -> mapVar $ k - 1
-    (s , EExpr (E.Subst s' e)) -> execSubstTyped s <$> execSubstTyped s' e
-    (_ , EExpr E.Univ) -> return e
-    (s , EExpr (E.Pi a)) -> pi $ execSubstAbs a
+    (s , EExpr (E.Subst s' e')) -> execSubst s $ execSubst s' e'
+    (_ , EExpr E.Univ) -> e
+    (s , EExpr (E.Pi a)) -> Fix $ setExpr (EExpr $ E.Pi $ execSubstAbs s a) $ unFix e
   where
-    mapVar k = Fix <$> (mapExpr (const $ EExpr $ E.Var k) e `typed`) <$> metaVar
+    mapVar k = Fix $ setExpr (EExpr $ E.Var k) $ unFix e
 
-execSubstAbs :: E.Subst (ExprFWith a (TypedExpr a)) -> E.Abs (TypedExpr a) -> E.Abs (TypedExpr a)
+execSubstAbs :: Default a => E.Subst (Expr a) -> E.Abs (Expr a) -> E.Abs (Expr a)
 execSubstAbs s (E.Abs t e) =
-  E.Abs (execSubst s t) $ execSubst (var 0 `E.Dot` (E.Shift 1 `composeSubst` s)) e
+  E.Abs (execSubst s t) $ execSubst (Fix (var 0) `E.Dot` (E.Shift 1 `composeSubst` s)) e
+
+composeSubst :: Default a => E.Subst (Expr a) -> E.Subst (Expr a) -> E.Subst (Expr a)
+composeSubst = curry $ \case
+  (s , E.Shift 0) -> s
+  (E.Dot e s , E.Shift m) -> composeSubst s $ E.Shift $ m - 1
+  (E.Shift m , E.Shift n) -> E.Shift $ m + n
+  (s , E.Dot e s') -> Fix (subst s e) `E.Dot` (s `composeSubst` s')
+
 
 data Error r =
   UnifyError (E.ExprF r) (E.ExprF r)
