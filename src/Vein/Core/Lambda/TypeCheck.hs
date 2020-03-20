@@ -169,7 +169,7 @@ infer unfix = \case
     E.Subst s e -> do
       s' <- traverse (fmap (Fix . fmap eraseType) . unfix) s
       e' <- Fix . fmap eraseType <$> unfix e
-      infer (return . termof . unFix) =<< ((unExpr . termof . unFix) <$> (reconstruct $ execSubst s' e'))
+      infer (return . termof . unFix) =<< ((unExpr . termof . unFix) <$> (reconstruct =<< execSubst s' e'))
 
   EMetaVar v -> metaVar
   where
@@ -264,20 +264,27 @@ execSubstTyped :: Default a => E.Subst (Expr a) -> Expr a -> Expr a
 execSubstTyped s (Fix (TypedExprF t e)) = Fix $ TypedExprF (execSubst s t) (execSubst s e)
 -}
 
-execSubst :: Default a  => E.Subst (Expr a) -> Expr a -> Expr a
+execSubst :: Default a  => E.Subst (Expr a) -> Expr a -> TypeCheckMonad a (Expr a)
 execSubst s e = case (s , unExpr $ unFix e) of
-    (E.Shift m , EExpr (E.Var k)) -> mapVar $ k + m
-    (E.Dot e' _ , EExpr (E.Var 0)) -> e'
-    (E.Dot e' s' , EExpr (E.Var k)) -> mapVar $ k - 1
-    (s , EExpr (E.Subst s' e')) -> execSubst s $ execSubst s' e'
-    (_ , EExpr E.Univ) -> e
-    (s , EExpr (E.Pi a)) -> Fix $ setExpr (EExpr $ E.Pi $ execSubstAbs s a) $ unFix e
+    (E.Shift m , EExpr (E.Var k)) -> setVar $ k + m
+    (E.Dot e' _ , EExpr (E.Var 0)) -> return e'
+    (E.Dot e' s' , EExpr (E.Var k)) -> setVar $ k - 1
+    (s , EExpr (E.Subst s' e')) -> execSubst s =<< execSubst s' e'
+    (_ , EExpr E.Univ) -> return e
+    (s , EExpr (E.Pi a)) -> setEExpr . E.Pi <$> execSubstAbs s a
+    (s , EExpr (E.Lam a)) -> setEExpr . E.Lam <$> execSubstAbs s a
+    (s , EExpr (E.App e1 e2)) -> setEExpr <$> (E.App <$> execSubst s e1 <*> execSubst s e2)
+    (s , EExpr (E.Const c)) -> undefined
+    (s , EExpr (E.Typing e t)) -> setEExpr <$> (E.Typing <$> execSubst s e <*> execSubst s t)
+    (_ , EMetaVar _) -> undefined
   where
-    mapVar k = Fix $ setExpr (EExpr $ E.Var k) $ unFix e
+    setVar k = return $ Fix $ setExpr (EExpr $ E.Var k) $ unFix e
+    setEExpr e' = Fix $ setExpr (EExpr e') $ unFix e
 
-execSubstAbs :: Default a => E.Subst (Expr a) -> E.Abs (Expr a) -> E.Abs (Expr a)
+
+execSubstAbs :: Default a => E.Subst (Expr a) -> E.Abs (Expr a) -> TypeCheckMonad a (E.Abs (Expr a))
 execSubstAbs s (E.Abs t e) =
-  E.Abs (execSubst s t) $ execSubst (Fix (var 0) `E.Dot` (E.Shift 1 `composeSubst` s)) e
+  E.Abs <$> execSubst s t <*> execSubst (Fix (var 0) `E.Dot` (E.Shift 1 `composeSubst` s)) e
 
 composeSubst :: Default a => E.Subst (Expr a) -> E.Subst (Expr a) -> E.Subst (Expr a)
 composeSubst = curry $ \case
