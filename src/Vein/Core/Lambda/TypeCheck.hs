@@ -34,7 +34,12 @@ newtype MetaVar = MetaVar Natural
 
 succMetaVar (MetaVar n) = MetaVar $ n + 1
 
-type GlobalEnv a = HashMap.HashMap E.Const (TypedExpr a)
+data GlobalEnv a = GlobalEnv
+  { defs :: HashMap.HashMap E.Const (TypedExpr a)
+  , anns :: [TypedExpr a]
+  }
+  deriving (Eq,Show)
+
 type LocalCtx a = [ExprFWith a (TypedExpr a)]
 
 data Env a = Env
@@ -75,7 +80,7 @@ assign v e = TypeCheckMonad $ do
 
 resolveConst :: E.Const -> TypeCheckMonad a (TypedExpr a)
 resolveConst c = do
-  c' <- TypeCheckMonad $ asks $ HashMap.lookup c . globalEnv
+  c' <- TypeCheckMonad $ asks $ HashMap.lookup c . defs . globalEnv
   maybe (throwError $ NotInScope c) return c'
 
 lookupLocalCtx :: Natural -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
