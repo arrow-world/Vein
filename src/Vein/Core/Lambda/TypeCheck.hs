@@ -8,8 +8,6 @@ import qualified Vein.Core.Lambda.Expr as E
 import qualified Vein.Core.Module as M
 import Vein.Util.Counter (Counter(..), count, runCounter)
 
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.State ( StateT , put , get , gets , modify , runStateT )
 import           Control.Monad.Trans.Reader     ( ReaderT
                                                 , ask
                                                 , asks
@@ -18,6 +16,7 @@ import           Control.Monad.Trans.Reader     ( ReaderT
                                                 )
 import           Control.Monad.Except           ( MonadError , throwError )
 import           Control.Monad                  ( (>=>) )
+import Control.Monad.State ( MonadState , get , put , gets , modify , StateT , runStateT )
 import           Control.Applicative            ( liftA2 )
 import Numeric.Natural ( Natural )
 import           Data.Fix                       ( Fix(..)
@@ -54,14 +53,14 @@ data Ctx a = Ctx
   deriving (Eq,Show)
 
 newtype TypeCheckMonad ann a = TypeCheckMonad (ReaderT (Env ann) (StateT (Ctx ann) (Either (Error (TypedExpr ann)))) a)
-  deriving (Functor , Applicative , Monad , MonadError (Error (TypedExpr ann)))
+  deriving (Functor , Applicative , Monad , MonadError (Error (TypedExpr ann)) , MonadState (Ctx ann))
 
 
 genMetaVar :: TypeCheckMonad a MetaVar
 genMetaVar = TypeCheckMonad $ do
-  ctx <- lift get
+  ctx <- get
   let metaVar = nextMetaVar ctx
-  lift $ put $ ctx { nextMetaVar = succMetaVar metaVar }
+  put $ ctx { nextMetaVar = succMetaVar metaVar }
   return metaVar
 
 metaVar :: Default a => TypeCheckMonad a (ExprFWith a r)
@@ -70,8 +69,7 @@ metaVar = expr . EMetaVar <$> genMetaVar
 
 assign :: MetaVar -> ExprFWith a (TypedExpr a) -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
 assign v e = TypeCheckMonad $ do
-  ctx <- lift $ get
-  lift $ put $ ctx { assignments = Map.insert v e $ assignments ctx }
+  modify $ \ctx -> ctx { assignments = Map.insert v e $ assignments ctx }
   return e
 
 
