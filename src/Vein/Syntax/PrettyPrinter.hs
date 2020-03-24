@@ -66,7 +66,7 @@ instance Pretty r => Pretty (AST.ExprF r) where
     AST.EPlaceholder -> "_"
     AST.EVar name -> pretty name
 
-    AST.EBinaryOpF op e1 e2 -> parens $ case op of
+    AST.EBinaryOpF op e1 e2 -> parens $ case unLocated op of
         AST.Arrow         -> stdLayout "->"
         AST.Plus          -> stdLayout "+"
         AST.Minus         -> stdLayout "-"

@@ -141,12 +141,12 @@ prop :: {Located (Either (ParseError LocatedExpr) (Prop LocatedExpr))} :
                                                   return $ PropEq var' params $3
                                                 
                                                 EUnaryOpF op e -> do
-                                                  op' <- maybe (Left $ NotAllowedExpr $1) Right $ uopToName op
-                                                  return $ PropEq (Located undefined op') (Located (toSpan e) [Located Nothing (Param e)]) $3
+                                                  let op' = fmap uopToName op
+                                                  return $ PropEq op' (Located (toSpan e) [Located Nothing (Param e)]) $3
 
                                                 EBinaryOpF op l r -> do
-                                                  op' <- maybe (Left $ NotAllowedExpr $1) Right $ bopToName op
-                                                  return $  PropEq (Located undefined op')
+                                                  op' <- maybe (Left $ NotAllowedExpr $1) Right $ traverse bopToName op
+                                                  return $  PropEq op'
                                                               (Located (composeSpan l r) $ map (Located Nothing . Param) [l,r]) $3
                                                 
                                                 _ -> Left $ NotAllowedExpr $1
@@ -160,7 +160,7 @@ props :: {Located [Located (Either (ParseError LocatedExpr) (Prop LocatedExpr))]
 
 expr_with_typing:
     expr                          { $1 }
-  | expr ':' expr                 { mkExpr $1 $3 $ EBinaryOpF Typing $1 $3 }
+  | expr ':' expr                 { mkExpr $1 $3 $ EBinaryOpF (Located $2 Typing) $1 $3 }
 
 expr_with_where:
     expr                          { $1 }
@@ -197,25 +197,25 @@ pat:
 
 expr23:
     expr22                          { $1 }
-  | expr23 '$' expr23               { mkExpr $1 $3 $ EBinaryOpF AppRight $1 $3 }
-  | expr23 '.' expr23               { mkExpr $1 $3 $ EBinaryOpF Compose $1 $3 }
-  | expr23 '>>' expr23              { mkExpr $1 $3 $ EBinaryOpF ComposeRight $1 $3 }
+  | expr23 '$' expr23               { mkExpr $1 $3 $ EBinaryOpF (Located $2 AppRight) $1 $3 }
+  | expr23 '.' expr23               { mkExpr $1 $3 $ EBinaryOpF (Located $2 Compose) $1 $3 }
+  | expr23 '>>' expr23              { mkExpr $1 $3 $ EBinaryOpF (Located $2 ComposeRight) $1 $3 }
 
 
 expr22:
     expr21                          { $1 }
-  | expr22 infixator expr21         { mkExpr $1 $3 $ EBinaryOpF (Infixated $2) $1 $3 }
+  | expr22 infixator expr21         { mkExpr $1 $3 $ EBinaryOpF $2 $1 $3 }
 
 infixator:
-    '`' expr21 '`'                  { mkExpr $1 $3 $ leExprF $ unFix $2 }
+    '`' expr21 '`'                  { Located ($1 `composeSpan` $3) $ Infixated $ mkExpr $1 $3 $ leExprF $ unFix $2 }
 
 
 expr21:
     expr2                           { $1 }
-  | expr21 '+' expr21               { mkExpr $1 $3 $ EBinaryOpF Plus $1 $3 }
-  | expr21 '-' expr21               { mkExpr $1 $3 $ EBinaryOpF Minus $1 $3 }
-  | expr21 '><' expr21              { mkExpr $1 $3 $ EBinaryOpF Times $1 $3 }
-  | expr21 '/' expr21               { mkExpr $1 $3 $ EBinaryOpF Div $1 $3 }
+  | expr21 '+' expr21               { mkExpr $1 $3 $ EBinaryOpF (Located $2 Plus) $1 $3 }
+  | expr21 '-' expr21               { mkExpr $1 $3 $ EBinaryOpF (Located $2 Minus) $1 $3 }
+  | expr21 '><' expr21              { mkExpr $1 $3 $ EBinaryOpF (Located $2 Times) $1 $3 }
+  | expr21 '/' expr21               { mkExpr $1 $3 $ EBinaryOpF (Located $2 Div) $1 $3 }
 
 expr2:
     expr1                           { $1 }
@@ -233,7 +233,7 @@ params:
 expr1 :: {LocatedExpr} :
     name                          { mkExpr $1 $1 $ EVar $ unLocated $1 }
   | literal                       { mkExpr $1 $1 $ ELiteralF $ fst $1 }
-  | '~' expr1                     { mkExpr $1 $2 $ EUnaryOpF Inverse $2 }
+  | '~' expr1                     { mkExpr $1 $2 $ EUnaryOpF (Located $1 Inverse) $2 }
   | '(' expr_with_typing ')'      { mkExpr $1 $3 $ leExprF $ unFix $2 }
   | list                          { mkExpr $1 $1 $ EListF $1 }
   | tuple                         { mkExpr $1 $1 $ ETupleF $1 }
@@ -308,25 +308,6 @@ mkExpr first last e = Fix $ LocatedExprF e $ composeSpan (toSpan first) (toSpan 
 mkArrow :: Located (Param LocatedExpr) -> LocatedExpr -> ExprF LocatedExpr
 mkArrow a (Fix (LocatedExprF (EArrowF as b) _)) = EArrowF (a:as) b
 mkArrow a b = EArrowF [a] b
-
-uopToName :: UnaryOp -> Maybe Module.QN
-uopToName = \case
-  _ -> Nothing
-
-bopToName :: BinaryOp LocatedExpr -> Maybe Module.QN
-bopToName = \case
-    Plus -> Just $ toQN [modop,"plus"]
-    Minus -> Just $ toQN [modop,"minus"]
-    Infixated e -> unLocated <$> unwrapQN e
-    _ -> Nothing
-  where
-    modop = "operator"
-    toQN = Module.QN . map Module.Name
-
-unwrapQN :: LocatedExpr -> Maybe (Located Module.QN)
-unwrapQN = \case
-  Fix (LocatedExprF (EVar name) loc) -> Just $ Located loc name
-  _ -> Nothing
 
 parseError :: L.LocatedToken -> L.Alex a
 parseError t = L.alexError $ "parseError: " ++ show t

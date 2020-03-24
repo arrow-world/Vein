@@ -5,6 +5,7 @@ module Vein.Syntax.Lexer where
 
 import Numeric.Natural (Natural)
 import qualified Numeric as Numeric
+import Data.Hashable (Hashable , hashWithSalt)
 import Data.List (head,drop,splitAt)
 import Data.Char (digitToInt)
 import Data.List.Split (splitOn)
@@ -100,6 +101,12 @@ data Token =
 
 data Span = Span { spanBegin :: AlexPosn , spanEnd :: Maybe Natural }
   deriving (Eq,Show)
+
+instance Hashable AlexPosn where
+  hashWithSalt s (AlexPn offset line col) = s `hashWithSalt` offset `hashWithSalt` line `hashWithSalt` col
+
+instance Hashable Span where
+  hashWithSalt s (Span begin end) = s `hashWithSalt` begin `hashWithSalt` end
 
 spanLength :: Span -> Maybe Natural
 spanLength (Span posn end) = do
