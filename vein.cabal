@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 363bb1e40cd87bf819af81c4686c756a4bb48d2c9ffad86c82466ac1c1d8d8d2
+-- hash: 232766632fd61379c62d6fd6e20dfc4c1434c8c13a79465e2333b38cebd50661
 
 name:           vein
 version:        0.1.0.0
@@ -42,9 +42,12 @@ library
       Vein.Core.Module
       Vein.Core.Monoidal.CompactClosed
       Vein.Core.Monoidal.Monad
+      Vein.Syntax.AssignId
       Vein.Temporal.Event
       Vein.Temporal.Types
+      Vein.Util.Allocator
       Vein.Util.Counter
+      Vein.Util.Pool
       Paths_vein
   hs-source-dirs:
       src
@@ -56,6 +59,7 @@ library
   build-depends:
       array
     , base
+    , bifunctors
     , containers
     , data-default
     , data-fix
@@ -66,6 +70,7 @@ library
     , optparse-applicative
     , prettyprinter
     , split
+    , template-haskell
     , terminal-size
     , text
     , transformers
@@ -86,6 +91,7 @@ executable vein-exe
   build-depends:
       array
     , base
+    , bifunctors
     , containers
     , data-default
     , data-fix
@@ -96,6 +102,7 @@ executable vein-exe
     , optparse-applicative
     , prettyprinter
     , split
+    , template-haskell
     , terminal-size
     , text
     , transformers
@@ -117,6 +124,7 @@ test-suite vein-test
   build-depends:
       array
     , base
+    , bifunctors
     , containers
     , data-default
     , data-fix
@@ -127,6 +135,7 @@ test-suite vein-test
     , optparse-applicative
     , prettyprinter
     , split
+    , template-haskell
     , terminal-size
     , text
     , transformers
