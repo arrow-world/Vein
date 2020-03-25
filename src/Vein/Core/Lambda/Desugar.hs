@@ -12,7 +12,8 @@ import qualified Vein.Core.Module as M
 import qualified Data.HashMap.Lazy as HashMap
 import qualified Data.HashSet as HashSet
 import Data.Fix ( Fix(..) )
-import Control.Monad.State ( MonadState , get , put , State , runState )
+import Control.Monad.State ( MonadState , get , put , StateT , runState )
+import           Control.Monad.Except           ( MonadError , throwError )
 import           Control.Applicative            ( liftA2 )
 import Data.Default (Default(..))
 import           Data.Foldable                  ( foldlM )
@@ -51,6 +52,18 @@ desugarExpr (Fix (AST.LocatedExprF e span)) = do
             (return e2)
         where annOp = spanToAnn l
               app2 e1' e2' e3'  = E.App <$> (withType . eExprFWith (spanToAnn $ span `P.composeSpan` l) =<< (E.App <$> e1' <*> e2')) <*> e3'
+      
+      AST.ELiteralF l -> return $ eExprFWith ann $ E.Primitive $ E.Literal l
+
+      AST.ELetInF decls e -> undefined
+
+
+toDestructuringAssignment :: AST.Env AST.LocatedExpr -> (AST.LocatedExpr , AST.LocatedExpr)
+toDestructuringAssignment decls = undefined
+
+unwrapParsedEnv :: AST.ParsedEnv AST.LocatedExpr -> DesugarMonad (AST.Env AST.LocatedExpr)
+unwrapParsedEnv (AST.ParsedEnv env) = either (throwError . EnvParseError) return env
+
 
 desugarExprWithType :: AST.LocatedExpr -> DesugarMonad (TC.TypedExpr Ann)
 desugarExprWithType e = Fix <$> liftA2 TC.typed (desugarExpr e) metaVar
@@ -62,8 +75,8 @@ locToAnn :: (a -> TC.ExprF r) -> AST.Located a -> TC.ExprFWith Ann r
 locToAnn f (AST.Located l e) = TC.ExprFWith (spanToAnn l) (f e)
 
 
-newtype DesugarMonad a = DesugarMonad (State TC.MetaVar a)
-  deriving (Functor , Applicative , Monad , MonadState TC.MetaVar)
+newtype DesugarMonad a = DesugarMonad (StateT TC.MetaVar (Either DesugarError) a)
+  deriving (Functor , Applicative , Monad , MonadState TC.MetaVar , MonadError DesugarError)
 
 genMetaVar :: DesugarMonad TC.MetaVar
 genMetaVar = DesugarMonad $ do
@@ -83,3 +96,7 @@ instance Default (HashSet.HashSet a) where
 
 spanToAnn :: Maybe L.Span -> Ann
 spanToAnn = maybe emptyAnn HashSet.singleton
+
+data DesugarError =
+    EnvParseError [AST.ParseError AST.LocatedExpr]
+  deriving (Eq,Show)

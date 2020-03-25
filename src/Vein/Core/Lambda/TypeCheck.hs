@@ -6,6 +6,7 @@ module Vein.Core.Lambda.TypeCheck where
 
 import qualified Vein.Core.Lambda.Expr as E
 import qualified Vein.Core.Module as M
+import qualified Vein.Syntax.AST as AST
 import Vein.Util.Counter (Counter(..), count, runCounter)
 
 import           Control.Monad.Trans.Reader     ( ReaderT
@@ -186,6 +187,13 @@ infer unfix = \case
       s' <- traverse (fmap (Fix . fmap eraseType) . unfix) s
       e' <- Fix . fmap eraseType <$> unfix e
       infer (return . termof . unFix) =<< ((unExpr . termof . unFix) <$> (reconstruct =<< execSubst Default.def s' e'))
+    
+    E.Primitive p -> case p of
+      E.Literal l -> case l of
+        AST.LNat _ _ -> undefined
+        AST.LFP _ _ -> undefined
+        AST.LStr _ -> undefined
+        AST.LChar _ -> undefined
 
   EMetaVar v -> metaVar
   where

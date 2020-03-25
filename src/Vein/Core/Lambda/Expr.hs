@@ -1,9 +1,11 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Vein.Core.Lambda.Expr where
 
 import qualified Vein.Core.Module as M
+import qualified Vein.Syntax.AST as AST
 
 import Numeric.Natural (Natural)
 import Data.Fix (Fix(..))
@@ -19,6 +21,7 @@ data ExprF r =
   | Typing r r
   | Pi (Abs r)
   | Subst (Subst r) r
+  | Primitive (Primitive r)
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
 data ExprFWith a r = ExprFWith a (ExprF r)
@@ -40,3 +43,8 @@ data Subst e =
 
 nilSubst = Shift 0
 dotNil e = Dot e nilSubst
+
+data Primitive e =
+    Literal AST.Literal
+  | Tuple [e]
+  deriving (Eq,Show,Functor,Foldable,Traversable)
