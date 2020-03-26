@@ -54,6 +54,8 @@ mapModuleMap f = \case
     ModuleMap m -> f $ HashMap.toList m
     ModuleMapL items -> f items
 
+moduleMapToList = mapModuleMap id
+
 
 alterF :: (Applicative m , Eq v , Hashable v) => (Maybe (Item v e) -> m (Maybe (Item v e))) -> v -> ModuleMap v e -> m (ModuleMap v e)
 alterF f name (ModuleMap m) = ModuleMap <$> HashMap.alterF f name m

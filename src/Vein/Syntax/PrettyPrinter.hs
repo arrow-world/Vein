@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
 
@@ -8,7 +11,7 @@ module Vein.Syntax.PrettyPrinter where
 import Vein.Syntax.Lexer as L
 import Vein.Syntax.Parser as P
 import Vein.Syntax.AST as AST
-import Vein.Core.Module as Module
+import qualified Vein.Core.Module as Module
 
 import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Render.Text (putDoc)
@@ -16,35 +19,36 @@ import Data.Text (Text)
 import Data.Fix (Fix(..))
 import qualified Data.HashMap.Lazy as HashMap
 
+{-
 instance Pretty e => Pretty (AST.Top e) where
   pretty = stmts . AST.definitions
+-}
 
-
-instance Pretty e => Pretty (AST.Statement e) where
+instance (Pretty e , Pretty v) => Pretty (AST.Statement v e) where
   pretty = \case
-    AST.Def d -> "<Def>" <+> align (pretty d)
+    AST.Def name d -> "<Def>" <+> align (pretty $ Named name d)
     AST.Ann a -> "<Ann>" <+> align (pretty a)
 
-instance Pretty e => Pretty (AST.Annotation e) where
+instance (Pretty e , Pretty v) => Pretty (AST.Annotation v e) where
   pretty = \case
     AST.TypeAnnotation l r -> pretty l <+> ":" <+> pretty r
     AST.DeclInstance (AST.Instance name params props) -> "instance" <+> prettyExprParamsProps name params props
 
 
-instance Pretty e => Pretty (AST.Env e) where
+instance (Pretty e , Pretty v) => Pretty (AST.Env v e) where
   pretty (Env mod anns) =
-    "module:" <> line <> indent 2 (align $ stmts $ map (uncurry Module.QNamed) $ HashMap.toList mod) <> line <>
+    "module:" <> line <> indent 2 (align $ stmts $ map (uncurry Named) $ AST.moduleMapToList mod) <> line <>
     "annotations:" <> line <> indent 2 (align $ stmts anns)
 
-instance Pretty e => Pretty (AST.ParseError e) where
+instance (Pretty e , Pretty v) => Pretty (AST.ParseError v e) where
   pretty = \case
-    AST.MultipleDecl name p i -> "MultipleDecl" <+> pretty p <+> pretty (Module.QNamed name i)
-    AST.MultipleDeclS name d i -> "MultipleDecl" <+> pretty (Module.QNamed name d) <+> pretty (Module.QNamed name i)
+    AST.MultipleDecl name p i -> "MultipleDecl" <+> pretty p <+> pretty (Named name i)
+    AST.MultipleDeclS name d i -> "MultipleDecl" <+> pretty (Named name d) <+> pretty (Named name i)
     AST.NotAllowedExpr e -> "NotAllowedExpr" <+> pretty e
 
-instance Pretty e => Pretty (Module.QNamed (AST.Item e)) where
-  pretty (Module.QNamed name i) = case i of
-    AST.ItemDef d -> "<ItemDef>" <+> align (pretty $ Module.QNamed name d)
+instance (Pretty e , Pretty v) => Pretty (Named v (AST.Item v e)) where
+  pretty (Named name i) = case i of
+    AST.ItemDef d -> "<ItemDef>" <+> align (pretty $ Named name d)
     AST.ItemEnv e -> "<ItemEnv>" <+> align (pretty e)
 
 
@@ -96,10 +100,10 @@ instance Pretty e => Pretty (AST.Param e) where
 instance Pretty a => Pretty (AST.Located a) where
   pretty = pretty . AST.unLocated
 
-instance {-# OVERLAPPING #-} Pretty e => Pretty [Located (Prop e)] where
+instance {-# OVERLAPPING #-} (Pretty e , Pretty v) => Pretty [Located (Prop v e)] where
   pretty = stmts
 
-instance Pretty e => Pretty (AST.Prop e) where
+instance (Pretty e , Pretty v) => Pretty (AST.Prop v e) where
   pretty = \case
     AST.PropEq name params r -> prettyNameParams (unLocated name) params <+> "=" <+> pretty r
     AST.PropTypeAnnotation l r -> pretty l <+> ":" <+> pretty r
@@ -132,9 +136,11 @@ instance Pretty e => Pretty (AST.Stmt e) where
     AST.Stmt e -> pretty e
     AST.StmtAssign l r -> pretty l <+> "<-" <+> pretty r
 
+data Named v e = Named v e
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-instance Pretty e => Pretty (Module.QNamed (AST.Definition e)) where
-  pretty def = case Module.qnamed def of
+instance (Pretty e , Pretty v) => Pretty (Named v (AST.Definition v e)) where
+  pretty (Named name def) = case def of
       AST.DefData d -> ("data" <+>) $ case d of
         AST.GADT params props -> prettyExprParamsProps name params props
         AST.ADT params cs -> prettyNameParams name params <+> "="
@@ -143,10 +149,8 @@ instance Pretty e => Pretty (Module.QNamed (AST.Definition e)) where
       AST.DefTypeclass (AST.Typeclass params props) -> "typeclass" <+> prettyExprParamsProps name params props
 
       AST.DefConst cs -> vsep $ map (\(params,p) -> prettyNameParams name params <+> "=" <+> pretty p) cs
-    where
-      name = Module.qn def
 
-instance Pretty e => Pretty (AST.Constructor e) where
+instance (Pretty e , Pretty v) => Pretty (AST.Constructor v e) where
   pretty (AST.Constructor name params) = prettyNameParams (unLocated name) params
 
 instance Pretty Module.Name where
@@ -160,13 +164,13 @@ softnest = (softline <>) . nest 2
 stmts :: Pretty a => [a] -> Doc ann
 stmts = vsep . map ( (<> ";") . pretty )
 
-prettyNameParams :: Pretty e => Module.QN -> AST.Located [AST.Located (AST.Param e)] -> Doc ann
+prettyNameParams :: (Pretty e , Pretty v) => v -> AST.Located [AST.Located (AST.Param e)] -> Doc ann
 prettyNameParams name params =
   pretty name <+> (align $ hsep $ map (parens . pretty) $ unLocated params)
 
-prettyExprParamsProps :: Pretty e => Module.QN -> AST.Located [AST.Located (AST.Param e)] -> AST.Located (ParsedEnv e) -> Doc ann
+prettyExprParamsProps :: (Pretty e , Pretty v) => v -> AST.Located [AST.Located (AST.Param e)] -> AST.Located (ParsedEnv v e) -> Doc ann
 prettyExprParamsProps e params props =
   prettyNameParams e params <+> "{" <> line <> indent 2 (prettyParsedEnv $ unLocated props) <> line <> "}"
 
-prettyParsedEnv :: Pretty e => AST.ParsedEnv e -> Doc ann
+prettyParsedEnv :: (Pretty e , Pretty v) => AST.ParsedEnv v e -> Doc ann
 prettyParsedEnv (AST.ParsedEnv env) = either (("<parse error>" <+>) . pretty) pretty env
