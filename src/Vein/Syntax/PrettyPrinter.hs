@@ -19,10 +19,8 @@ import Data.Text (Text)
 import Data.Fix (Fix(..))
 import qualified Data.HashMap.Lazy as HashMap
 
-{-
 instance Pretty e => Pretty (AST.Top e) where
-  pretty = stmts . AST.definitions
--}
+  pretty = stmts . map (\(Module.QNamed name def) -> Named name def) . AST.definitions
 
 instance (Pretty e , Pretty v) => Pretty (AST.Statement v e) where
   pretty = \case
