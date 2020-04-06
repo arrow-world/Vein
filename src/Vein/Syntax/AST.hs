@@ -165,10 +165,22 @@ data ExprF' v r =
 
 type ExprF r = ExprF' Module.QN r
 
-data LocatedExprF r = LocatedExprF { leExprF :: ExprF r , leSpan :: Maybe Span }
-  deriving (Eq,Show)
+data PatF' v r =
+    PatExprF (ExprF' v r)
+  | As v r
+  | Irrefutable r
+  deriving (Eq,Show,Functor,Foldable,Traversable)
 
-type LocatedExpr = Fix LocatedExprF
+type PatF r = PatF' Module.QN r
+
+data LocatedExprF' v r = LocatedExprF { leExprF :: ExprF' v r , leSpan :: Maybe Span }
+  deriving (Eq,Show,Functor,Foldable,Traversable)
+
+type LocatedExprF r = LocatedExprF' Module.QN r
+
+type LocatedExpr' v = Fix (LocatedExprF' v)
+
+type LocatedExpr = LocatedExpr' Module.QN
 
 data Located a = Located { lSpan :: Maybe Span , unLocated :: a }
   deriving (Eq,Show,Functor,Foldable,Traversable)
@@ -280,6 +292,7 @@ unwrapQN :: LocatedExpr -> Maybe (Located Module.QN)
 unwrapQN (Fix (LocatedExprF e l)) = Located l <$> unwrapQN' e
 
 $(deriveBifunctor ''ExprF')
+$(deriveBifunctor ''LocatedExprF')
 $(deriveBifunctor ''Env)
 $(deriveBifunctor ''Prop)
 $(deriveBifunctor ''ParsedEnv)
@@ -293,6 +306,7 @@ $(deriveBifunctor ''Annotation)
 $(deriveBifunctor ''Instance)
 
 $(deriveBifoldable ''ExprF')
+$(deriveBifoldable ''LocatedExprF')
 $(deriveBifoldable ''Env)
 $(deriveBifoldable ''Prop)
 $(deriveBifoldable ''ParsedEnv)
@@ -306,6 +320,7 @@ $(deriveBifoldable ''Annotation)
 $(deriveBifoldable ''Instance)
 
 $(deriveBitraversable ''ExprF')
+$(deriveBitraversable ''LocatedExprF')
 $(deriveBitraversable ''Env)
 $(deriveBitraversable ''Prop)
 $(deriveBitraversable ''ParsedEnv)

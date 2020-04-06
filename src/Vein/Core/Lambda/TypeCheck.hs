@@ -58,8 +58,8 @@ data Ctx a = Ctx
   }
   deriving (Eq,Show)
 
-newtype TypeCheckMonad ann a = TypeCheckMonad (ReaderT (Env ann) (StateT (Ctx ann) (Either (Error (TypedExpr ann)))) a)
-  deriving (Functor , Applicative , Monad , MonadError (Error (TypedExpr ann)) , MonadState (Ctx ann))
+newtype TypeCheckMonad ann a = TypeCheckMonad (ReaderT (Env ann) (StateT (Ctx ann) (Either (Error ann))) a)
+  deriving (Functor , Applicative , Monad , MonadError (Error ann) , MonadState (Ctx ann))
 
 
 genMetaVar :: TypeCheckMonad a MetaVar
@@ -93,25 +93,30 @@ localEnv f (TypeCheckMonad r) = TypeCheckMonad $ local f r
 appendLocalCtx e = localEnv $ mapLocalCtx (e:)
 
 
-runTypeCheckMonad :: TypeCheckMonad ann a -> GlobalEnv ann -> Ctx ann -> Either (Error (TypedExpr ann)) (a , Ctx ann)
+runTypeCheckMonad :: TypeCheckMonad ann a -> GlobalEnv ann -> Ctx ann -> Either (Error ann) (a , Ctx ann)
 runTypeCheckMonad (TypeCheckMonad r) e = runStateT (runReaderT r $ Env e [])
 
 
-data ExprF r =
+data ExprF pat r =
     EMetaVar MetaVar
-  | EExpr (E.ExprF r)
+  | EExpr (E.ExprF pat r)
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data ExprFWith a r = ExprFWith { eAnn :: a , unExpr :: ExprF r }
+data TypedPatF a r = TypedPatF { tpfType :: ExprFWith a r , tpfPat :: E.PatFWith a r }
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
-expr :: Default a => ExprF r -> ExprFWith a r
+type TypedPat a = Fix (TypedPatF a)
+
+data ExprFWith a r = ExprFWith { eAnn :: a , unExpr :: ExprF (TypedPat a) r }
+  deriving (Eq,Show,Functor,Foldable,Traversable)
+
+expr :: Default a => ExprF (TypedPat a) r -> ExprFWith a r
 expr = ExprFWith Default.def
 
 mapExpr f (ExprFWith a e) = ExprFWith a $ f e
 setExpr e' (ExprFWith a e) = ExprFWith a e'
 
-traverseExprFWith :: Functor f => (ExprF r -> f (ExprF b)) -> ExprFWith a r -> f (ExprFWith a b)
+traverseExprFWith :: Functor f => (ExprF (TypedPat a) r -> f (ExprF (TypedPat a) b)) -> ExprFWith a r -> f (ExprFWith a b)
 traverseExprFWith f (ExprFWith a e) = ExprFWith a <$> f e
 
 
@@ -155,7 +160,7 @@ reconstruct e = Fix <$> liftA2 typed e' (infer (return . termof . unFix) =<< unE
 
 
 infer :: (Default a , Monoid a) => (r -> TypeCheckMonad a (ExprFWith a (TypedExpr a)))
-                                -> ExprF r -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
+                                -> ExprF (TypedPat a) r -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
 infer unfix = \case
   EExpr e -> case e of
     E.Var n -> lookupLocalCtx n
@@ -222,7 +227,7 @@ unifyTyped e1 e2 = do
   return $ Fix $ e `typed` t
 
 
-zipMatchExprF :: (a -> b -> c) -> E.ExprF a -> E.ExprF b -> Maybe (E.ExprF c)
+zipMatchExprF :: (a -> b -> c) -> E.ExprF pat a -> E.ExprF pat b -> Maybe (E.ExprF pat c)
 zipMatchExprF f = curry $ \case
   (E.Var n , E.Var m) | n == m -> Just $ E.Var n
   (E.Lam a , E.Lam a') -> Just $ E.Lam $ zipMatchAbs a a'
@@ -245,7 +250,7 @@ traverseExpr' ::  (r -> TypeCheckMonad a (ExprFWith a (TypedExpr a)))
 traverseExpr' unfix f = traverseExprFWith (traverseExpr unfix f)
 
 traverseExpr ::   (r -> TypeCheckMonad a (ExprFWith a (TypedExpr a)))
-                    -> (r -> TypeCheckMonad a b) -> ExprF r -> TypeCheckMonad a (ExprF b)
+                    -> (r -> TypeCheckMonad a b) -> ExprF (TypedPat a) r -> TypeCheckMonad a (ExprF (TypedPat a) b)
 traverseExpr unfix f = \case
     EMetaVar v -> return $ EMetaVar v
     EExpr (E.Lam a) -> EExpr . E.Lam <$> traverseAbs a
@@ -316,6 +321,6 @@ composeSubst = curry $ \case
   (s , E.Dot e s') -> Fix (subst s e) `E.Dot` (s `composeSubst` s')
 
 
-data Error r =
-    UnifyError (E.ExprF r) (E.ExprF r)
+data Error a =
+    UnifyError (E.ExprF (TypedPat a) (TypedExpr a)) (E.ExprF (TypedPat a) (TypedExpr a))
   | NotInScope E.Const

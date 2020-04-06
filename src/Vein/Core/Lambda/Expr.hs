@@ -10,9 +10,9 @@ import qualified Vein.Syntax.AST as AST
 import Numeric.Natural (Natural)
 import Data.Fix (Fix(..))
 
-type Const = M.QN
+type Const = Natural
 
-data ExprF r =
+data ExprF pat r =
     Var Natural
   | Lam (Abs r)
   | App r r
@@ -21,10 +21,11 @@ data ExprF r =
   | Typing r r
   | Pi (Abs r)
   | Subst (Subst r) r
+  | Case [Clause pat r]
   | Primitive (Primitive r)
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data ExprFWith a r = ExprFWith a (ExprF r)
+data ExprFWith a r = ExprFWith a (ExprF (TypedPat a) r)
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
 data TypedExprF a r = TypedExprF { tefType :: ExprFWith a r , tefTerm :: ExprFWith a r }
@@ -47,4 +48,24 @@ dotNil e = Dot e nilSubst
 data Primitive e =
     Literal AST.Literal
   | Tuple [e]
+  deriving (Eq,Show,Functor,Foldable,Traversable)
+
+data PatF r =
+    PatCon { datatype :: Const , conId :: Natural , args :: [r] }
+  | PatList [r]
+  | PatTuple [r]
+  | PatLit AST.Literal
+  | PatWildcard
+  deriving (Eq,Show,Functor,Foldable,Traversable)
+
+data PatFWith a r = PatFWith a (PatF r)
+  deriving (Eq,Show,Functor,Foldable,Traversable)
+
+data TypedPatF a r = TypedPatF { tpfType :: ExprFWith a r , tpfPat :: PatFWith a r }
+  deriving (Eq,Show,Functor,Foldable,Traversable)
+
+type TypedPat a = Fix (TypedPatF a)
+
+
+data Clause pat e = Clause pat e
   deriving (Eq,Show,Functor,Foldable,Traversable)
