@@ -55,6 +55,7 @@ instance Pretty r => Pretty (AST.ExprF r) where
     AST.EApp f xs -> pretty f <+> (align $ vsep $ map pretty $ unLocated xs)
     AST.EUnaryOpF op e -> pretty op <+> pretty e
     AST.ELiteralF l -> pretty l
+    AST.ETyping e1 e2 -> pretty e1 <+> ":" <+> pretty e2
     AST.ELetInF ps e -> "let" <+> prettyParsedEnv (unLocated ps) <+> softnest ("in" <+> pretty e)
     AST.EWhereF e ps -> pretty e <+> softnest ("where" <+> prettyParsedEnv (unLocated ps))
     AST.ECaseOfF e cs -> "case" <+> pretty e <+> softnest ("of" <+> pretty cs)
@@ -74,7 +75,6 @@ instance Pretty r => Pretty (AST.ExprF r) where
         AST.Minus         -> stdLayout "-"
         AST.Times         -> stdLayout "×"
         AST.Div           -> stdLayout "/"
-        AST.Typing        -> stdLayout ":"
         AST.AppRight      -> stdLayout "$"
         AST.Compose       -> stdLayout "."
         AST.ComposeRight  -> stdLayout ">>"

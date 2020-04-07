@@ -149,6 +149,7 @@ data ExprF' v r =
   | EUnaryOpF (Located UnaryOp) r
   | EBinaryOpF (Located (BinaryOp r)) r r
   | ELiteralF Literal
+  | ETyping r r
   | ELetInF (Located (ParsedEnv Module.QN r)) r
   | EWhereF r (Located (ParsedEnv Module.QN r))
   | ECaseOfF r (Located [Located (Clause r)])
@@ -195,7 +196,6 @@ data BinaryOp e =
   | Minus
   | Times
   | Div
-  | Typing
   | AppRight
   | Compose
   | ComposeRight
@@ -273,9 +273,17 @@ bopToName = unwrapQN' . bopToExpr
 
 bopToExpr' :: BinaryOp e -> Either e Module.QN
 bopToExpr' = \case
-    Plus -> Right $ toQN [modop,"plus"]
-    Minus -> Right $ toQN [modop,"minus"]
+    Arrow -> toQN' "arrow"
+    Plus -> toQN' "plus"
+    Minus -> toQN' "minus"
+    Times -> toQN' "times"
+    Div -> toQN' "div"
+    AppRight -> toQN' "appRight"
+    Compose -> toQN' "compose"
+    ComposeRight -> toQN' "composeRight"
     Infixated e -> Left e
+  where
+    toQN' s = Right $ toQN [modop,s]
 
 bopToExpr :: BinaryOp LocatedExpr -> ExprF LocatedExpr
 bopToExpr = either (leExprF . unFix) EVar . bopToExpr'

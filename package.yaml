@@ -11,6 +11,7 @@ library:
   - Vein.Syntax.PrettyPrinter
   - Vein.Syntax.AST
   - Vein.Core.Monoidal.Monoidal
+  - Vein.Core.Module
 tests:
   vein-test:
     source-dirs: test

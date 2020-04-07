@@ -160,7 +160,7 @@ props :: {Located [Located (Either (ParseError Module.QN LocatedExpr) (Prop Modu
 
 expr_with_typing:
     expr                          { $1 }
-  | expr ':' expr                 { mkExpr $1 $3 $ EBinaryOpF (Located $2 Typing) $1 $3 }
+  | expr ':' expr                 { mkExpr $1 $3 $ ETyping $1 $3 }
 
 expr_with_where:
     expr                          { $1 }

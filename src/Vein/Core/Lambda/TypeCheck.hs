@@ -102,10 +102,12 @@ data ExprF pat r =
   | EExpr (E.ExprF pat r)
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data TypedPatF a r = TypedPatF { tpfType :: ExprFWith a r , tpfPat :: E.PatFWith a r }
+data TypedPatF a r = TypedPatF { tpfType :: ExprFWith a (TypedExpr a) , tpfPat :: E.PatFWith a r }
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
 type TypedPat a = Fix (TypedPatF a)
+
+typedPat = flip TypedPatF
 
 data ExprFWith a r = ExprFWith { eAnn :: a , unExpr :: ExprF (TypedPat a) r }
   deriving (Eq,Show,Functor,Foldable,Traversable)
