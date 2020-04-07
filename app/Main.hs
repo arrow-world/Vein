@@ -7,7 +7,7 @@ import qualified Vein.Syntax.AST as AST
 import qualified Vein.Syntax.PrettyPrinter as PrettyPrinter
 import qualified Vein.Core.Module as Module
 
-import qualified Option as Option
+import qualified Option
 
 import Data.Text.Prettyprint.Doc (pretty)
 import Data.Text.Prettyprint.Doc.Util (putDocW)

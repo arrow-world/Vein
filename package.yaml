@@ -12,6 +12,7 @@ library:
   - Vein.Syntax.AST
   - Vein.Core.Monoidal.Monoidal
   - Vein.Core.Module
+  - Vein.Core.Lambda.Desugar
 tests:
   vein-test:
     source-dirs: test

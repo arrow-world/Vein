@@ -80,13 +80,6 @@ eExprFWith ann = TC.ExprFWith ann . TC.EExpr
 toDestructuringAssignment :: AST.Env M.QN AST.LocatedExpr -> (AST.LocatedExpr , AST.LocatedExpr)
 toDestructuringAssignment decls = undefined
 
-
-{-
-exprPairsFromMod :: AST.ModuleMap M.QN AST.LocatedExpr -> [(AST.LocatedExpr , AST.LocatedExpr)]
-exprPairsFromMod = AST.mapModuleMap $ concatMap toExprPair
-  where toExprPair (name , AST.ItemDef (AST.DefConst defs)) = map undefined defs
--}
-
 fnBindings :: AST.Located [(AST.Located [AST.Located (AST.Param AST.LocatedExpr)] , AST.LocatedExpr)] -> DesugarMonad Expr
 fnBindings (AST.Located l clauses) =
   if all ((== nArgs) . length . fst) clauses then
@@ -106,7 +99,7 @@ desugarPat (Fix (AST.LocatedExprF c l)) = case c of
   AST.EApp (Fix (AST.LocatedExprF (AST.EVar fName) lF)) xs -> do
     R.Con datatype conId <- resolveCon fName
     patFWith . E.PatCon datatype conId <$> traverse desugarPatParamWithType (AST.unLocated xs)
-  
+
   AST.EUnaryOpF op e -> desugarPat' $ uncurry AST.EApp $ uopToApp op e
 
   AST.EBinaryOpF op e1 e2 -> desugarPat' $ uncurry AST.EApp $ bopToApp $ AST.Located l (op,e1,e2)
@@ -145,7 +138,7 @@ uopToApp (AST.Located lop op) e =
 
 bopToApp :: AST.Located (AST.Located (AST.BinaryOp AST.LocatedExpr), AST.LocatedExpr , AST.LocatedExpr)
               -> (AST.LocatedExpr , AST.Located [AST.Located (AST.Param AST.LocatedExpr)])
-bopToApp (AST.Located l ((AST.Located lop op) , e1 , e2)) =
+bopToApp (AST.Located l (AST.Located lop op , e1 , e2)) = 
   ( case AST.bopToExpr' op of {
       Left op' -> op';
       Right op' -> Fix $ AST.LocatedExprF (AST.EVar op') lop;
