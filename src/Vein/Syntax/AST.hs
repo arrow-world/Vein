@@ -150,8 +150,8 @@ data ExprF' v r =
   | EBinaryOpF (Located (BinaryOp r)) r r
   | ELiteralF Literal
   | ETyping r r
-  | ELetInF (Located (ParsedEnv Module.QN r)) r
-  | EWhereF r (Located (ParsedEnv Module.QN r))
+  | ELetInF (Located (ParsedEnv v r)) r
+  | EWhereF r (Located (ParsedEnv v r))
   | ECaseOfF r (Located [Located (Clause r)])
   | EMatchF (Located [Located (Clause r)])
   | EListF (Located [r])

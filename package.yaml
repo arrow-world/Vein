@@ -44,6 +44,7 @@ dependencies:
 - data-default
 - bifunctors
 - template-haskell
+- safe
 name: vein
 version: 0.1.0.0
 extra-source-files:

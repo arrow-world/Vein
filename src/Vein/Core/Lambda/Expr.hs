@@ -11,7 +11,7 @@ import Data.Fix (Fix(..))
 
 type Const = Natural
 
-data ExprF pat r =
+data ExprF r =
     Var Natural
   | Lam (Abs r)
   | App r r
@@ -20,11 +20,11 @@ data ExprF pat r =
   | Typing r r
   | Pi (Abs r)
   | Subst (Subst r) r
-  | Case [Clause pat r]
+  | Case r [Alt r] r
   | Primitive (Primitive r)
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data ExprFWith a r = ExprFWith a (ExprF (TypedPat a) r)
+data ExprFWith a r = ExprFWith a (ExprF r)
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
 data TypedExprF a r = TypedExprF { tefType :: ExprFWith a r , tefTerm :: ExprFWith a r }
@@ -46,25 +46,14 @@ dotNil e = Dot e nilSubst
 
 data Primitive e =
     Literal AST.Literal
+  | List [e]
   | Tuple [e]
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data PatF r =
-    PatCon { datatype :: Const , conId :: Natural , args :: [r] }
-  | PatList [r]
-  | PatTuple [r]
-  | PatLit AST.Literal
-  | PatWildcard
+data Alt e = Alt AltCon e
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data PatFWith a r = PatFWith a (PatF r)
-  deriving (Eq,Show,Functor,Foldable,Traversable)
-
-data TypedPatF a r = TypedPatF { tpfType :: ExprFWith a r , tpfPat :: PatFWith a r }
-  deriving (Eq,Show,Functor,Foldable,Traversable)
-
-type TypedPat a = Fix (TypedPatF a)
-
-
-data Clause pat e = Clause pat e
-  deriving (Eq,Show,Functor,Foldable,Traversable)
+data AltCon =
+    DataAlt Natural
+  | LitAlt AST.Literal
+    deriving (Eq,Show)

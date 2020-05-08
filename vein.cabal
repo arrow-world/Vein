@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5ce1d1e9c2940260915dfa37100a8cfc37cb4bb17ef9708b9fc8ed9956d493c7
+-- hash: bbaa074c7e060c1b2ee63f70f8e8e56b01f6f3ae6a0c2f83fe115eeeba9c4546
 
 name:           vein
 version:        0.1.0.0
@@ -69,6 +69,7 @@ library
     , mtl
     , optparse-applicative
     , prettyprinter
+    , safe
     , split
     , template-haskell
     , terminal-size
@@ -101,6 +102,7 @@ executable vein-exe
     , mtl
     , optparse-applicative
     , prettyprinter
+    , safe
     , split
     , template-haskell
     , terminal-size
@@ -134,6 +136,7 @@ test-suite vein-test
     , mtl
     , optparse-applicative
     , prettyprinter
+    , safe
     , split
     , template-haskell
     , terminal-size

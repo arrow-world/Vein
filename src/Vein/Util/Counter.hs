@@ -4,13 +4,17 @@
 module Vein.Util.Counter where
 
 import Numeric.Natural ( Natural )
-import Control.Monad.State ( State , modify , get , runState )
+import Control.Monad.State ( StateT , modify , get , runState )
+import Data.Functor.Identity (Identity(..))
 
-newtype Counter a = Counter (State Natural a)
+newtype CounterT m a = CounterT (StateT Natural m a)
   deriving (Functor, Applicative, Monad)
 
-count :: Counter Natural
-count = Counter $ get <* modify (+1)
+newtype Counter a = Counter (CounterT Identity a)
+  deriving (Functor, Applicative, Monad)
 
-runCounter :: Counter a -> (a , Natural)
-runCounter (Counter m) = runState m 0
+count :: Monad m => CounterT m Natural
+count = CounterT $ get <* modify (+1)
+
+runCounter :: CounterT Identity a -> (a , Natural)
+runCounter (CounterT m) = runState m 0

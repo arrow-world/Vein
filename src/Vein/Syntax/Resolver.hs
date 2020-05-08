@@ -4,9 +4,10 @@ module Vein.Syntax.Resolver where
 
 import qualified Vein.Syntax.AST as AST
 import qualified Vein.Core.Module as Module
+import qualified Vein.Core.Module as M
 import qualified Vein.Core.Lambda.Expr as E
 import Vein.Util.Allocator (AllocatorT , allocate , allocateWith)
-import Vein.Util.Counter (Counter , count)
+import Vein.Util.Counter (CounterT , count)
 
 import Control.Monad.Reader (Reader, ask, asks, runReader, ReaderT, mapReaderT, local, MonadReader)
 import           Control.Monad.Except           ( ExceptT
@@ -22,23 +23,27 @@ import           Data.Bitraversable             ( bitraverse )
 import qualified Data.HashMap.Lazy as HashMap
 import           Data.Maybe                     ( isJust )
 import qualified Data.HashSet as HashSet
+import           Data.List                      ( elemIndex )
 
 
 data Scope v =
     Scope
       { decls :: HashSet.HashSet v
-      , currentModule :: v
+      , currentModule :: M.QN
       , parent :: Scope v
       , cons :: HashMap.HashMap v Con
+      , args :: [v]
       }
   | NilScope
     deriving (Eq,Show)
 
-type Scope' = Scope Module.QN
+type Scope' = Scope MatchVar
+
+type MatchVar = Either Natural Module.QN
 
 inScope :: (Eq v , Hashable v) => v -> Scope v -> Bool
 inScope name = \case
-  Scope decls mod parent ctors -> HashSet.member name decls || inScope name parent
+  Scope decls mod parent ctors args -> HashSet.member name decls || inScope name parent
   NilScope -> False
 
 
@@ -47,39 +52,65 @@ resolve name = do
   fqn <- toFQN name
 
   if inScope name scope then
-    ResolverMonad $ lift $ lift $ allocateWith (const $ count) $ allocate fqn
+    ResolverMonad $ lift $ lift $ allocateWith (const count) $ allocate fqn
   else
     throwError $ NotInScope name scope
 
+tryResolve name = do
+  scope <- ask
+  fqn <- toFQN name
 
-localScope :: MonadReader Scope' m => Module.QN -> HashSet.HashSet Module.QN -> HashMap.HashMap Module.QN Con -> m a -> m a
-localScope relName declNames ctors m = do
-  fqn <- toFQN relName
-  local (\parent -> Scope (declNames <> HashMap.keysSet ctors) fqn parent ctors) m
+  if inScope name scope then
+    Just <$> ResolverMonad (lift $ lift $ allocateWith (const count) $ allocate fqn)
+  else
+    return Nothing
 
 
-newtype ResolverMonad a = ResolverMonad (ReaderT Scope' (ExceptT Error (StateT (Map.Map Id Module.QN) Counter)) a)
-  deriving (Functor , Applicative , Monad , MonadState (Map.Map Id Module.QN) , MonadError Error , MonadReader Scope')
+dbi :: MatchVar -> Scope' -> Maybe Natural
+dbi name scope =
+    maybe (fmap (fromIntegral (length $ args scope) +) $ dbi name $ parent scope) (Just . fromIntegral) i
+  where
+    i = elemIndex name $ args scope
+
+tryResolveArg :: Monad m => MatchVar -> ResolverMonadT m (Maybe Natural)
+tryResolveArg name = asks $ dbi name
+
+resolveArg :: Monad m => MatchVar -> ResolverMonadT m Natural
+resolveArg name = do
+  scope <- ask
+  maybe (throwError $ ArgNotInScope name scope) return $ dbi name scope
+
+
+localScope :: MonadReader Scope' m => M.QN -> HashSet.HashSet MatchVar -> HashMap.HashMap MatchVar Con -> [MatchVar] -> m a -> m a
+localScope relName declNames ctors args m = do
+  fqn <- toFQN $ Right relName
+  let Right fqn' = fqn
+  local (\parent -> Scope (declNames <> HashMap.keysSet ctors <> HashSet.fromList args) fqn' parent ctors args) m
+
+
+newtype ResolverMonadT m a = ResolverMonad (ReaderT Scope' (ExceptT Error (StateT (Map.Map Id MatchVar) (CounterT m))) a)
+  deriving (Functor , Applicative , Monad , MonadState (Map.Map Id MatchVar) , MonadError Error , MonadReader Scope')
 
 data Error =
-    NotInScope Module.QN (Scope Module.QN)
-  | ConNotInScope Module.QN (Scope Module.QN)
+    NotInScope MatchVar (Scope MatchVar)
+  | ConNotInScope MatchVar (Scope MatchVar)
+  | ArgNotInScope MatchVar (Scope MatchVar)
   deriving (Eq,Show)
 
 
 type Id = Natural
 
 
-toFQN :: MonadReader Scope' m => Module.QN -> m Module.QN
-toFQN name = asks $ \scope -> concatQN (currentModule scope) name
+toFQN :: MonadReader Scope' m => MatchVar -> m MatchVar
+toFQN name = asks $ \scope -> either Left (Right . concatQN (currentModule scope)) name
 
-concatQN :: Module.QN -> Module.QN -> Module.QN
-concatQN (Module.QN ns) (Module.QN ns') = Module.QN $ ns ++ ns'
+concatQN :: M.QN -> M.QN -> M.QN
+concatQN (M.QN ns) (M.QN ns') = M.QN $ ns ++ ns'
 
-emptyQN = Module.QN []
+emptyQN = M.QN []
 
 
-resolveCon :: MonadReader Scope' m => MonadError Error m => Module.QN -> m Con
+resolveCon :: MonadReader Scope' m => MonadError Error m => MatchVar -> m Con
 resolveCon name = do
   con <- HashMap.lookup <$> toFQN name <*> asks cons
   maybe (throwError =<< asks (ConNotInScope name)) return con

@@ -7,7 +7,7 @@ module Vein.Core.Lambda.TypeCheck where
 import qualified Vein.Core.Lambda.Expr as E
 import qualified Vein.Core.Module as M
 import qualified Vein.Syntax.AST as AST
-import Vein.Util.Counter (Counter(..), count, runCounter)
+import Vein.Util.Counter (CounterT(..), count, runCounter)
 
 import           Control.Monad.Trans.Reader     ( ReaderT
                                                 , ask
@@ -97,28 +97,22 @@ runTypeCheckMonad :: TypeCheckMonad ann a -> GlobalEnv ann -> Ctx ann -> Either 
 runTypeCheckMonad (TypeCheckMonad r) e = runStateT (runReaderT r $ Env e [])
 
 
-data ExprF pat r =
+data ExprF r =
     EMetaVar MetaVar
-  | EExpr (E.ExprF pat r)
+  | EExpr (E.ExprF r)
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
-data TypedPatF a r = TypedPatF { tpfType :: ExprFWith a (TypedExpr a) , tpfPat :: E.PatFWith a r }
+
+data ExprFWith a r = ExprFWith { eAnn :: a , unExpr :: ExprF r }
   deriving (Eq,Show,Functor,Foldable,Traversable)
 
-type TypedPat a = Fix (TypedPatF a)
-
-typedPat = flip TypedPatF
-
-data ExprFWith a r = ExprFWith { eAnn :: a , unExpr :: ExprF (TypedPat a) r }
-  deriving (Eq,Show,Functor,Foldable,Traversable)
-
-expr :: Default a => ExprF (TypedPat a) r -> ExprFWith a r
+expr :: Default a => ExprF r -> ExprFWith a r
 expr = ExprFWith Default.def
 
 mapExpr f (ExprFWith a e) = ExprFWith a $ f e
 setExpr e' (ExprFWith a e) = ExprFWith a e'
 
-traverseExprFWith :: Functor f => (ExprF (TypedPat a) r -> f (ExprF (TypedPat a) b)) -> ExprFWith a r -> f (ExprFWith a b)
+traverseExprFWith :: Functor f => (ExprF r -> f (ExprF b)) -> ExprFWith a r -> f (ExprFWith a b)
 traverseExprFWith f (ExprFWith a e) = ExprFWith a <$> f e
 
 
@@ -162,7 +156,7 @@ reconstruct e = Fix <$> liftA2 typed e' (infer (return . termof . unFix) =<< unE
 
 
 infer :: (Default a , Monoid a) => (r -> TypeCheckMonad a (ExprFWith a (TypedExpr a)))
-                                -> ExprF (TypedPat a) r -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
+                                -> ExprF r -> TypeCheckMonad a (ExprFWith a (TypedExpr a))
 infer unfix = \case
   EExpr e -> case e of
     E.Var n -> lookupLocalCtx n
@@ -229,7 +223,7 @@ unifyTyped e1 e2 = do
   return $ Fix $ e `typed` t
 
 
-zipMatchExprF :: (a -> b -> c) -> E.ExprF pat a -> E.ExprF pat b -> Maybe (E.ExprF pat c)
+zipMatchExprF :: (a -> b -> c) -> E.ExprF a -> E.ExprF b -> Maybe (E.ExprF c)
 zipMatchExprF f = curry $ \case
   (E.Var n , E.Var m) | n == m -> Just $ E.Var n
   (E.Lam a , E.Lam a') -> Just $ E.Lam $ zipMatchAbs a a'
@@ -252,7 +246,7 @@ traverseExpr' ::  (r -> TypeCheckMonad a (ExprFWith a (TypedExpr a)))
 traverseExpr' unfix f = traverseExprFWith (traverseExpr unfix f)
 
 traverseExpr ::   (r -> TypeCheckMonad a (ExprFWith a (TypedExpr a)))
-                    -> (r -> TypeCheckMonad a b) -> ExprF (TypedPat a) r -> TypeCheckMonad a (ExprF (TypedPat a) b)
+                    -> (r -> TypeCheckMonad a b) -> ExprF r -> TypeCheckMonad a (ExprF b)
 traverseExpr unfix f = \case
     EMetaVar v -> return $ EMetaVar v
     EExpr (E.Lam a) -> EExpr . E.Lam <$> traverseAbs a
@@ -324,5 +318,5 @@ composeSubst = curry $ \case
 
 
 data Error a =
-    UnifyError (E.ExprF (TypedPat a) (TypedExpr a)) (E.ExprF (TypedPat a) (TypedExpr a))
+    UnifyError (E.ExprF (TypedExpr a)) (E.ExprF (TypedExpr a))
   | NotInScope E.Const
